@@ -1,0 +1,28 @@
+name: Install gh-tofu
+description: >-
+  Install the gh-tofu binary from its GitHub release, verified against sha256sums.txt,
+  and add it to PATH. Linux and macOS runners only. Does not run OpenTofu or configure state.
+
+inputs:
+  version:
+    description: Stable gh-tofu version, for example 1.13.2 or v1.13.2. Empty installs the latest stable release.
+    required: false
+    default: ""
+  install-dir:
+    description: Directory that receives the gh-tofu binary. Empty uses $RUNNER_TEMP/gh-tofu-bin, which later steps in the same job reuse; an existing gh-tofu there is replaced after checksum verification.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install gh-tofu
+      shell: bash
+      env:
+        GH_TOFU_VERSION: ${{ inputs.version }}
+        GH_TOFU_INSTALL_DIR: ${{ inputs.install-dir }}
+      run: |
+        set -euo pipefail
+        install_dir="${GH_TOFU_INSTALL_DIR:-$RUNNER_TEMP/gh-tofu-bin}"
+        VERSION="$GH_TOFU_VERSION" INSTALL_DIR="$install_dir" sh "$GITHUB_ACTION_PATH/scripts/install.sh"
+        echo "$install_dir" >> "$GITHUB_PATH"

@@ -1,0 +1,262 @@
+name: Release
+
+# gh-tofu contract: the release version equals the pinned OpenTofu version, and each
+# platform is a raw executable named gh-tofu-<GOOS>-<GOARCH>[.exe] plus sha256sums.txt.
+# GitHub CLI extension discovery depends on that suffix; the installer and action rely on it too.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - stable
+      prerelease_suffix:
+        description: "Prerelease suffix, for example rc.1 (ignored for stable releases)"
+        required: false
+        default: "rc.1"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-workflow
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      source_sha: ${{ steps.version.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate pinned version and release type
+        id: version
+        shell: bash
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          PRERELEASE_SUFFIX: ${{ inputs.prerelease_suffix }}
+        run: |
+          source ./gh-tofu.env
+
+          if [[ "$OPENTOFU_REF" != "v$GH_TOFU_VERSION" ]]; then
+            echo "::error::GH_TOFU_VERSION ($GH_TOFU_VERSION) must match OPENTOFU_REF ($OPENTOFU_REF)."
+            exit 1
+          fi
+
+          if [[ ! "$GH_TOFU_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::GH_TOFU_VERSION must be a stable OpenTofu semantic version, got: $GH_TOFU_VERSION"
+            exit 1
+          fi
+
+          RELEASES_JSON="$(curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/opentofu/opentofu/releases?per_page=100")"
+
+          LATEST_VERSION="$(
+            jq -r '.[] | select(.draft == false and .prerelease == false) | .tag_name' <<<"$RELEASES_JSON" |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+              sed 's/^v//' |
+              sort -V |
+              tail -n1
+          )"
+
+          if [[ -z "$LATEST_VERSION" ]]; then
+            echo "::error::Could not determine the latest stable OpenTofu release."
+            exit 1
+          fi
+          if [[ "$GH_TOFU_VERSION" != "$LATEST_VERSION" ]]; then
+            echo "::error::gh-tofu can only release against OpenTofu's globally latest stable version: pinned=$GH_TOFU_VERSION, latest=$LATEST_VERSION."
+            exit 1
+          fi
+
+          UPSTREAM_COMMIT="$(
+            git ls-remote https://github.com/opentofu/opentofu.git "refs/tags/$OPENTOFU_REF^{}" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [[ -z "$UPSTREAM_COMMIT" ]]; then
+            UPSTREAM_COMMIT="$(
+              git ls-remote https://github.com/opentofu/opentofu.git "refs/tags/$OPENTOFU_REF" |
+                awk 'NR == 1 { print $1 }'
+            )"
+          fi
+          if [[ -z "$UPSTREAM_COMMIT" ]]; then
+            echo "::error::Could not resolve upstream tag $OPENTOFU_REF."
+            exit 1
+          fi
+          if [[ "$OPENTOFU_COMMIT" != "$UPSTREAM_COMMIT" ]]; then
+            echo "::error::OPENTOFU_COMMIT does not match $OPENTOFU_REF: pinned=$OPENTOFU_COMMIT, upstream=$UPSTREAM_COMMIT."
+            exit 1
+          fi
+
+          case "$RELEASE_TYPE" in
+            stable)
+              VERSION="$GH_TOFU_VERSION"
+              TAG="v$VERSION"
+              IS_PRERELEASE=false
+              ;;
+            prerelease)
+              if [[ ! "$PRERELEASE_SUFFIX" =~ ^(alpha|beta|rc)\.[1-9][0-9]*$ ]]; then
+                echo "::error::Prerelease suffix must match alpha.N, beta.N, or rc.N (N >= 1)."
+                exit 1
+              fi
+              VERSION="$GH_TOFU_VERSION-$PRERELEASE_SUFFIX"
+              TAG="v$VERSION"
+              IS_PRERELEASE=true
+              ;;
+            *)
+              echo "::error::Unsupported release type: $RELEASE_TYPE"
+              exit 1
+              ;;
+          esac
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists."
+            exit 1
+          fi
+
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+          echo "gh-tofu release: $TAG"
+          echo "OpenTofu base: $OPENTOFU_REF ($OPENTOFU_COMMIT)"
+          echo "Source commit: $SOURCE_SHA"
+
+      - name: Verify patches and tests
+        env:
+          GH_TOFU_VERIFY_OUTPUT: ${{ runner.temp }}/gh-tofu
+        run: bash ./scripts/verify.sh
+
+      - name: Verify ORAS backend lifecycle
+        env:
+          GH_TOFU_BIN: ${{ runner.temp }}/gh-tofu
+        run: bash ./scripts/e2e-oras.sh
+
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.source_sha }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "stable"
+          cache: false
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+          GOTOOLCHAIN: "auto"
+        run: bash ./scripts/build.sh
+
+      - name: Package
+        shell: bash
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          EXT=""
+          if [[ "$TARGET_OS" == "windows" ]]; then
+            EXT=".exe"
+          fi
+          mkdir -p artifacts
+          cp dist/gh-tofu "artifacts/gh-tofu-${TARGET_OS}-${TARGET_ARCH}${EXT}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gh-tofu-${{ matrix.os }}-${{ matrix.arch }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: Publish ${{ needs.verify.outputs.tag }}
+    needs: [verify, build]
+    if: >-
+      ${{ !cancelled()
+      && needs.verify.result == 'success'
+      && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # Serialize release metadata mutation with the Release Drafter draft job.
+    concurrency:
+      group: release-metadata
+      queue: max
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.source_sha }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Check asset set
+        run: |
+          set -euo pipefail
+          cd artifacts
+          # Exactly the five gh-tofu-<GOOS>-<GOARCH>[.exe] executables, nothing else.
+          for name in gh-tofu-linux-amd64 gh-tofu-linux-arm64 gh-tofu-darwin-amd64 \
+            gh-tofu-darwin-arm64 gh-tofu-windows-amd64.exe; do
+            test -s "$name" || { echo "::error::Missing release asset $name"; exit 1; }
+          done
+          [[ "$(find . -maxdepth 1 -type f | wc -l)" -eq 5 ]] ||
+            { echo "::error::Unexpected files in the release asset set."; exit 1; }
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > sha256sums.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
+          IS_PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        shell: bash
+        run: bash ./scripts/publish-release.sh

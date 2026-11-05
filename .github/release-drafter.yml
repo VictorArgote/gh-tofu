@@ -1,0 +1,45 @@
+# Release Drafter prepares notes only. OpenTofu owns gh-tofu's version number:
+# release.yml replaces this neutral draft tag with the exact latest stable
+# OpenTofu version when a stable gh-tofu release is published.
+name-template: "Next gh-tofu release"
+tag-template: "next"
+
+categories:
+  - title: "💥 Breaking Changes"
+    exclusive: true
+    when:
+      conventional:
+        breaking: true
+  - title: "🚀 Features"
+    labels:
+      - "enhancement"
+  - title: "🐛 Bug Fixes"
+    labels:
+      - "bug"
+  - title: "📖 Documentation"
+    labels:
+      - "documentation"
+  - title: "🧰 Maintenance"
+
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-title-escapes: "\\<*_&"
+sync-labels: true
+
+autolabeler:
+  - labels:
+      - "enhancement"
+    title:
+      - "/^feat(\\(.+\\))?!?:/i"
+  - labels:
+      - "bug"
+    title:
+      - "/^fix(\\(.+\\))?!?:/i"
+  - labels:
+      - "documentation"
+    title:
+      - "/^docs(\\(.+\\))?!?:/i"
+
+template: |
+  ## What's Changed
+
+  $CHANGES

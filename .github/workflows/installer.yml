@@ -1,0 +1,56 @@
+name: Installer
+
+on:
+  pull_request:
+    paths:
+      - scripts/install.sh
+      - action.yml
+      - .github/workflows/installer.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/install.sh
+      - action.yml
+      - .github/workflows/installer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-latest-stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate installer syntax
+        run: sh -n scripts/install.sh
+
+      - name: Install latest stable release
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/gh-tofu-install
+        run: |
+          set -euo pipefail
+          sh scripts/install.sh
+          test -x "$INSTALL_DIR/gh-tofu"
+          "$INSTALL_DIR/gh-tofu" version
+
+  action-latest-stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install latest stable release with the action
+        uses: ./
+        with:
+          install-dir: ${{ runner.temp }}/gh-tofu-action
+
+      - name: Run installed binary
+        run: gh-tofu version

@@ -1,0 +1,40 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify release publication failure handling
+        run: python3 scripts/test-publish-release.py
+
+      - name: Verify installer and release asset contract
+        run: python3 scripts/test-install.py
+
+      - name: Verify OpenTofu update PR body
+        run: python3 scripts/test-opentofu-update.py
+
+      - name: Verify patches and focused tests
+        env:
+          GH_TOFU_VERIFY_OUTPUT: ${{ runner.temp }}/gh-tofu
+        run: bash ./scripts/verify.sh
+
+      - name: Verify ORAS backend lifecycle
+        env:
+          GH_TOFU_BIN: ${{ runner.temp }}/gh-tofu
+        run: bash ./scripts/e2e-oras.sh

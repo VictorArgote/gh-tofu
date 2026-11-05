@@ -1,0 +1,2814 @@
+diff --git a/cmd/tofu/commands.go b/cmd/tofu/commands.go
+index 82556a1f7..1085ddbf9 100644
+--- a/cmd/tofu/commands.go
++++ b/cmd/tofu/commands.go
+@@ -205,6 +205,22 @@ func initCommands(meta command.Meta) {
+ 			}, nil
+ 		},
+ 
++		"history": func() (cli.Command, error) {
++			return &command.HistoryCommand{}, nil
++		},
++
++		"history list": func() (cli.Command, error) {
++			return &command.HistoryListCommand{Meta: meta}, nil
++		},
++
++		"history show": func() (cli.Command, error) {
++			return &command.HistoryShowCommand{Meta: meta}, nil
++		},
++
++		"history pull": func() (cli.Command, error) {
++			return &command.HistoryPullCommand{Meta: meta}, nil
++		},
++
+ 		"import": func() (cli.Command, error) {
+ 			return &command.ImportCommand{
+ 				Meta: meta,
+diff --git a/go.mod b/go.mod
+index 29019c212..a323fff1a 100644
+--- a/go.mod
++++ b/go.mod
+@@ -20,7 +20,7 @@ require (
+ 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0
+ 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
+ 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
+-	github.com/ProtonMail/go-crypto v1.4.1
++	github.com/ProtonMail/go-crypto v1.5.2
+ 	github.com/agext/levenshtein v1.2.3
+ 	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
+ 	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
+@@ -89,6 +89,7 @@ require (
+ 	github.com/tencentyun/cos-go-sdk-v5 v0.7.70
+ 	github.com/ulikunitz/xz v0.5.16
+ 	github.com/urfave/cli/v3 v3.10.1
++	github.com/vmvarela/oras-state v0.2.3
+ 	github.com/xanzy/ssh-agent v0.3.3
+ 	github.com/xlab/treeprint v1.2.0
+ 	github.com/zclconf/go-cty v1.19.0
+@@ -104,10 +105,11 @@ require (
+ 	golang.org/x/mod v0.39.0
+ 	golang.org/x/net v0.57.0
+ 	golang.org/x/oauth2 v0.36.0
+-	golang.org/x/sync v0.22.0
++	golang.org/x/sync v0.24.0
+ 	golang.org/x/sys v0.47.0
+ 	golang.org/x/term v0.45.0
+ 	golang.org/x/text v0.41.0
++	golang.org/x/time v0.15.0
+ 	google.golang.org/api v0.293.0
+ 	google.golang.org/grpc v1.83.1
+ 	google.golang.org/protobuf v1.36.12
+@@ -115,7 +117,7 @@ require (
+ 	k8s.io/apimachinery v0.36.3
+ 	k8s.io/client-go v0.36.3
+ 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
+-	oras.land/oras-go/v2 v2.6.2
++	oras.land/oras-go/v2 v2.6.3
+ )
+ 
+ require (
+@@ -130,7 +132,7 @@ require (
+ 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+ 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
+ 	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2 // indirect
+-	github.com/BurntSushi/toml v1.2.1 // indirect
++	github.com/BurntSushi/toml v1.6.0 // indirect
+ 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 // indirect
+ 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0 // indirect
+ 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
+@@ -214,6 +216,7 @@ require (
+ 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+ 	github.com/oklog/run v1.1.0 // indirect
+ 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
++	github.com/oras-project/oras-go/v3 v3.0.0 // indirect
+ 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
+ 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+ 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+@@ -256,7 +259,6 @@ require (
+ 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+ 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
+ 	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
+-	golang.org/x/time v0.15.0 // indirect
+ 	golang.org/x/tools v0.48.0 // indirect
+ 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
+ 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
+diff --git a/go.sum b/go.sum
+index e87e6830c..f4bff059d 100644
+--- a/go.sum
++++ b/go.sum
+@@ -51,8 +51,8 @@ github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1 h1:WJ
+ github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1/go.mod h1:tCcJZ0uHAmvjsVYzEFivsRTN00oz5BEsRgQHu5JZ9WE=
+ github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2 h1:RHK7bS+HQMslb1sZpAokUt+zTVmue0hKSs2C791hhzU=
+ github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
+-github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
+-github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
++github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
++github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
+ github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
+ github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 h1:l7+6kwRMJNwdCvYdDl7Eax+wzEYHSnNY7zrrfbhDdTA=
+@@ -78,8 +78,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
+ github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+ github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2 h1:+vx7roKuyA63nhn5WAunQHLTznkw5W8b1Xc0dNjp83s=
+ github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2/go.mod h1:HBCaDeC1lPdgDeDbhX8XFpy1jqjK0IBG8W5K+xYqA0w=
+-github.com/ProtonMail/go-crypto v1.4.1 h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=
+-github.com/ProtonMail/go-crypto v1.4.1/go.mod h1:e1OaTyu5SYVrO9gKOEhTc+5UcXtTUa+P3uLudwcgPqo=
++github.com/ProtonMail/go-crypto v1.5.2 h1:cucYnvqcY7UOXVD//mSyjeaPY0SSN3v5cDkYPxumINk=
++github.com/ProtonMail/go-crypto v1.5.2/go.mod h1:/RaSu30DaKO4RY+XdV/ACcCcZkGr7AhUIduq5sjzzCo=
+ github.com/agext/levenshtein v1.2.3 h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7lmo=
+ github.com/agext/levenshtein v1.2.3/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
+ github.com/ajstarks/svgo v0.0.0-20180226025133-644b8db467af/go.mod h1:K08gAheRH3/J6wwsYMMT4xOr94bZjxIelGM0+d/wbFw=
+@@ -472,6 +472,8 @@ github.com/opentofu/svchost v0.0.0-20260410171206-1a42986aa3f4 h1:BhB8EYO7kGYQS6
+ github.com/opentofu/svchost v0.0.0-20260410171206-1a42986aa3f4/go.mod h1:0kKTcD9hUrbAz41GWp8USa/+OuI8QKirU3qdCWNa3jI=
+ github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b h1:FfH+VrHHk6Lxt9HdVS0PXzSXFyS2NbZKXv33FYPol0A=
+ github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b/go.mod h1:AC62GU6hc0BrNm+9RK9VSiwa/EUe1bkIeFORAMcHvJU=
++github.com/oras-project/oras-go/v3 v3.0.0 h1:Aq6hmOEGahuD2UrKrpw5V3oCyCKtCs6xf/MPFDJ3XGo=
++github.com/oras-project/oras-go/v3 v3.0.0/go.mod h1:jt0+rBVbpB3LeazooQx4raSrZ8evpnNLDlrSoJZvbh4=
+ github.com/pascaldekloe/goe v0.1.0 h1:cBOtyMzM9HTpWjXfbbunk26uA6nG3a8n06Wieeh0MwY=
+ github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
+ github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=
+@@ -575,6 +577,8 @@ github.com/vmihailenco/msgpack/v5 v5.3.5 h1:5gO0H1iULLWGhs2H5tbAHIZTV8/cYafcFOr9
+ github.com/vmihailenco/msgpack/v5 v5.3.5/go.mod h1:7xyJ9e+0+9SaZT0Wt1RGleJXzli6Q/V5KbhBonMG9jc=
+ github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAhO7/IwNM9g=
+ github.com/vmihailenco/tagparser/v2 v2.0.0/go.mod h1:Wri+At7QHww0WTrCBeu4J6bNtoV6mEfg5OIWRZA9qds=
++github.com/vmvarela/oras-state v0.2.3 h1:y+8iw7zMKuK0TPV9NoBM43j2wALMuxHVLBgdFnrcspM=
++github.com/vmvarela/oras-state v0.2.3/go.mod h1:+TcvQMEdDN/+OU9Fn6azSzxCfcmGnFYXv1d7YKABEmo=
+ github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
+ github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
+ github.com/xanzy/ssh-agent v0.3.3 h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=
+@@ -698,8 +702,8 @@ golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4/go.mod h1:RxMgew5VJxzue5/jJ
+ golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+-golang.org/x/sync v0.22.0 h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=
+-golang.org/x/sync v0.22.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
++golang.org/x/sync v0.24.0 h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=
++golang.org/x/sync v0.24.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
+ golang.org/x/sys v0.0.0-20180905080454-ebe1bf3edb33/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20181116152217-5ac8a444bdc5/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+@@ -811,8 +815,8 @@ k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a h1:xCeOEAOoGYl2jnJoHkC3hk
+ k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a/go.mod h1:uGBT7iTA6c6MvqUvSXIaYZo9ukscABYi2btjhvgKGZ0=
+ k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 h1:jVkFFVfXdXP74B/zbO3hM3hpSFD0xvhQ5U686DPurkE=
+ k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3/go.mod h1:M2s5JB1lIYP3jzZdorPLHXIPJzt9vv2muW5a6L9DtNM=
+-oras.land/oras-go/v2 v2.6.2 h1:N04RXngAp1LJKTG6ifz3xHPipasEkWr+hFmInja5YKo=
+-oras.land/oras-go/v2 v2.6.2/go.mod h1:PlTtg4JTDJkDe8yVHpM2wz7/YDc00GVas+i4jAW2TZ4=
++oras.land/oras-go/v2 v2.6.3 h1:72z4K9YiDKVB5jieM8cuB1WSVnbZkkD2hd+NmO3HYVI=
++oras.land/oras-go/v2 v2.6.3/go.mod h1:imXEFiYkTZUVVYkfv/r5GVmWeiLkGtNQA8FU4F/sjKs=
+ rsc.io/pdf v0.1.1/go.mod h1:n8OzWcQ6Sp37PL01nO98y4iUCRdTGarVfzxY20ICaU4=
+ sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=
+ sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
+diff --git a/internal/backend/init/init.go b/internal/backend/init/init.go
+index 15dc3cbfd..fb4c99d69 100644
+--- a/internal/backend/init/init.go
++++ b/internal/backend/init/init.go
+@@ -23,6 +23,7 @@ import (
+ 	backendHTTP "github.com/opentofu/opentofu/internal/backend/remote-state/http"
+ 	backendInmem "github.com/opentofu/opentofu/internal/backend/remote-state/inmem"
+ 	backendKubernetes "github.com/opentofu/opentofu/internal/backend/remote-state/kubernetes"
++	backendORAS "github.com/opentofu/opentofu/internal/backend/remote-state/oras"
+ 	backendOSS "github.com/opentofu/opentofu/internal/backend/remote-state/oss"
+ 	backendPg "github.com/opentofu/opentofu/internal/backend/remote-state/pg"
+ 	backendS3 "github.com/opentofu/opentofu/internal/backend/remote-state/s3"
+@@ -83,6 +84,7 @@ func Init(services *disco.Disco) {
+ 		"http":       func(enc encryption.StateEncryption) backend.Backend { return backendHTTP.New(enc) },
+ 		"inmem":      func(enc encryption.StateEncryption) backend.Backend { return backendInmem.New(enc) },
+ 		"kubernetes": func(enc encryption.StateEncryption) backend.Backend { return backendKubernetes.New(enc) },
++		"oras":       func(enc encryption.StateEncryption) backend.Backend { return backendORAS.New(enc) },
+ 		"oss":        func(enc encryption.StateEncryption) backend.Backend { return backendOSS.New(enc) },
+ 		"pg":         func(enc encryption.StateEncryption) backend.Backend { return backendPg.New(enc) },
+ 		"s3":         func(enc encryption.StateEncryption) backend.Backend { return backendS3.New(enc) },
+diff --git a/internal/backend/remote-state/oras/auth_exchange_test.go b/internal/backend/remote-state/oras/auth_exchange_test.go
+new file mode 100644
+index 000000000..56c2d66ce
+--- /dev/null
++++ b/internal/backend/remote-state/oras/auth_exchange_test.go
+@@ -0,0 +1,281 @@
++package oras
++
++import (
++	"context"
++	"crypto/tls"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"testing"
++
++	orasstate "github.com/vmvarela/oras-state"
++)
++
++// These tests drive the real oras-state/oras-go auth exchange through the guarded
++// client: the challenge, realm validation, the OAuth2 form POST, the distribution
++// GET fallback, and redirects. A registry answers only with the expected secret,
++// so an unguarded credential send to an attacker would visibly succeed.
++
++const (
++	exchangeSecret = "SECRET-PASSWORD-123"
++	exchangeToken  = "bearer-token-456"
++	formType       = "application/x-www-form-urlencoded"
++)
++
++type fakeAuthServer struct {
++	srv *httptest.Server
++
++	realm            string // bearer challenge realm for /v2/ requests
++	postUnsupported  bool   // POST /token answers 404, forcing the GET fallback
++	tokenRedirect    string // POST /token answers 307 to this URL
++	getTokenRedirect string // GET /token answers 307 to this URL
++
++	mu       sync.Mutex
++	hits     []string // "METHOD PATH" for every request
++	credHits int      // requests that carried credentials
++}
++
++func newFakeAuthServer(t *testing.T) *fakeAuthServer {
++	t.Helper()
++	f := &fakeAuthServer{}
++	f.srv = httptest.NewTLSServer(http.HandlerFunc(f.serve))
++	t.Cleanup(f.srv.Close)
++	return f
++}
++
++func (f *fakeAuthServer) host() string { return strings.TrimPrefix(f.srv.URL, "https://") }
++
++func (f *fakeAuthServer) hitOnPath(path string) bool {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	for _, h := range f.hits {
++		if strings.HasSuffix(h, " "+path) {
++			return true
++		}
++	}
++	return false
++}
++
++func (f *fakeAuthServer) anyHits() bool {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	return len(f.hits) > 0
++}
++
++func (f *fakeAuthServer) credentialHits() int {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	return f.credHits
++}
++
++func (f *fakeAuthServer) serve(w http.ResponseWriter, r *http.Request) {
++	f.mu.Lock()
++	f.hits = append(f.hits, r.Method+" "+r.URL.Path)
++	if r.Header.Get("Authorization") != "" || r.Header.Get("Content-Type") == formType {
++		f.credHits++
++	}
++	f.mu.Unlock()
++
++	writeToken := func() {
++		w.Header().Set("Content-Type", "application/json")
++		_ = json.NewEncoder(w).Encode(map[string]string{"access_token": exchangeToken, "token": exchangeToken})
++	}
++	switch {
++	case r.URL.Path == "/token" && r.Method == http.MethodPost:
++		if f.tokenRedirect != "" {
++			http.Redirect(w, r, f.tokenRedirect, http.StatusTemporaryRedirect)
++			return
++		}
++		if f.postUnsupported {
++			w.WriteHeader(http.StatusNotFound)
++			return
++		}
++		_ = r.ParseForm()
++		if r.PostForm.Get("username") != "x" || r.PostForm.Get("password") != exchangeSecret {
++			w.WriteHeader(http.StatusUnauthorized)
++			return
++		}
++		writeToken()
++	case r.URL.Path == "/token" && r.Method == http.MethodGet:
++		if f.getTokenRedirect != "" {
++			http.Redirect(w, r, f.getTokenRedirect, http.StatusTemporaryRedirect)
++			return
++		}
++		if u, p, ok := r.BasicAuth(); !ok || u != "x" || p != exchangeSecret {
++			w.WriteHeader(http.StatusUnauthorized)
++			return
++		}
++		writeToken()
++	case strings.HasPrefix(r.URL.Path, "/v2/"):
++		if r.Header.Get("Authorization") != "Bearer "+exchangeToken {
++			w.Header().Set("WWW-Authenticate", `Bearer realm="`+f.realm+`",service="ghcr.io",scope="repository:ns/state:pull"`)
++			w.WriteHeader(http.StatusUnauthorized)
++			return
++		}
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"name":"ns/state","tags":["state-x"]}`))
++	default:
++		// Any other path behaves like a valid token endpoint: an unguarded request
++		// to it would succeed and be detected by the assertions.
++		writeToken()
++	}
++}
++
++// runExchange lists the state repository through a real orasstate.Client whose HTTP
++// client is the guard, and reports whether the authenticated listing returned the
++// state tag served only to a valid bearer token. oras-state maps some errors to
++// the default workspace, so an error alone is not a reliable signal.
++func runExchange(t *testing.T, guard *credentialGuard, reg *fakeAuthServer) (bool, error) {
++	t.Helper()
++	guard.inner = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test-only self-signed servers
++	client, err := orasstate.NewClient(reg.host(), "ns/state", orasstate.Config{
++		WorkspaceLayout: orasstate.WorkspaceLayoutLegacy,
++		HTTPClient:      &http.Client{Transport: guard},
++		CredentialFunc: func(context.Context, string) (orasstate.Credential, error) {
++			return orasstate.Credential{Username: "x", Password: exchangeSecret}, nil
++		},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	workspaces, err := client.List(context.Background())
++	authenticated := false
++	for _, ws := range workspaces {
++		authenticated = authenticated || ws == "x"
++	}
++	return authenticated, err
++}
++
++func TestAuthExchangeThroughGuard(t *testing.T) {
++	t.Setenv("ORAS_TOKEN", "")
++	t.Setenv("GH_TOKEN", "")
++	t.Setenv("GITHUB_TOKEN", "")
++
++	type scenario struct {
++		name string
++		// mode selects the guard: "ghcr", "insecure", or "secure".
++		mode  string
++		setup func(reg, att *fakeAuthServer)
++		// wantOK is whether the list must succeed.
++		wantOK bool
++		// wantRegHit is a registry path the exchange must reach when wantOK.
++		wantRegHit string
++		// forbidRegPath is a registry path that must not be reached.
++		forbidRegPath string
++		// attackerMayReceiveCreds is set only for the ordinary secure cross-host realm.
++		attackerMayReceiveCreds bool
++		// attackerSilent requires the attacker server to see no request at all.
++		attackerSilent bool
++	}
++	scenarios := []scenario{
++		{
++			name: "GHCR expected OAuth2 form exchange succeeds", mode: "ghcr", wantOK: true, wantRegHit: "/token",
++			setup: func(reg, _ *fakeAuthServer) { reg.realm = "https://" + reg.host() + "/token" },
++		},
++		{
++			name: "GHCR expected distribution fallback succeeds", mode: "ghcr", wantOK: true, wantRegHit: "/token",
++			setup: func(reg, _ *fakeAuthServer) {
++				reg.realm = "https://" + reg.host() + "/token"
++				reg.postUnsupported = true
++			},
++		},
++		{
++			name: "GHCR attacker realm host refused", mode: "ghcr", attackerSilent: true,
++			setup: func(reg, att *fakeAuthServer) { reg.realm = "https://" + att.host() + "/token" },
++		},
++		{
++			name: "GHCR attacker path on expected host refused", mode: "ghcr", forbidRegPath: "/evil-token",
++			setup: func(reg, _ *fakeAuthServer) { reg.realm = "https://" + reg.host() + "/evil-token" },
++		},
++		{
++			name: "GHCR same-origin redirect to attacker path refused", mode: "ghcr", forbidRegPath: "/evil-token",
++			setup: func(reg, _ *fakeAuthServer) {
++				reg.realm = "https://" + reg.host() + "/token"
++				reg.tokenRedirect = "https://" + reg.host() + "/evil-token"
++			},
++		},
++		{
++			name: "GHCR cross-origin redirect of form POST to attacker refused", mode: "ghcr", attackerSilent: true,
++			setup: func(reg, att *fakeAuthServer) {
++				reg.realm = "https://" + reg.host() + "/token"
++				reg.tokenRedirect = "https://" + att.host() + "/token"
++			},
++		},
++		{
++			name: "GHCR GET fallback redirected to attacker refused", mode: "ghcr",
++			setup: func(reg, att *fakeAuthServer) {
++				reg.realm = "https://" + reg.host() + "/token"
++				reg.postUnsupported = true
++				reg.getTokenRedirect = "https://" + att.host() + "/token"
++			},
++		},
++		{
++			name: "GHCR GET fallback redirected to attacker path refused", mode: "ghcr", forbidRegPath: "/evil-token",
++			setup: func(reg, _ *fakeAuthServer) {
++				reg.realm = "https://" + reg.host() + "/token"
++				reg.postUnsupported = true
++				reg.getTokenRedirect = "https://" + reg.host() + "/evil-token"
++			},
++		},
++		{
++			name: "insecure attacker realm host refused", mode: "insecure", attackerSilent: true,
++			setup: func(reg, att *fakeAuthServer) { reg.realm = "https://" + att.host() + "/token" },
++		},
++		{
++			name: "insecure expected realm on registry host succeeds", mode: "insecure", wantOK: true, wantRegHit: "/token",
++			setup: func(reg, _ *fakeAuthServer) { reg.realm = "https://" + reg.host() + "/token" },
++		},
++		{
++			name: "secure ordinary registry cross-host HTTPS realm keeps Docker-style fallback", mode: "secure",
++			wantOK: true, attackerMayReceiveCreds: true,
++			setup: func(reg, att *fakeAuthServer) { reg.realm = "https://" + att.host() + "/token" },
++		},
++	}
++
++	for _, sc := range scenarios {
++		t.Run(sc.name, func(t *testing.T) {
++			reg := newFakeAuthServer(t)
++			att := newFakeAuthServer(t)
++			sc.setup(reg, att)
++
++			var guard *credentialGuard
++			switch sc.mode {
++			case "ghcr":
++				guard = &credentialGuard{registry: reg.host(), ghcr: &ghcrEndpoints{tokenHost: reg.host(), apiHost: "api.invalid"}}
++			case "insecure":
++				guard = &credentialGuard{registry: reg.host(), insecure: true}
++			default:
++				guard = &credentialGuard{registry: reg.host()}
++			}
++
++			authenticated, err := runExchange(t, guard, reg)
++			if sc.wantOK && !authenticated {
++				t.Fatalf("expected authenticated listing, got err=%v", err)
++			}
++			if !sc.wantOK && authenticated {
++				t.Fatal("expected the exchange to be refused, but the authenticated listing succeeded")
++			}
++			if err != nil && strings.Contains(err.Error(), exchangeSecret) {
++				t.Fatalf("error disclosed the password: %v", err)
++			}
++			if sc.wantRegHit != "" && !reg.hitOnPath(sc.wantRegHit) {
++				t.Fatalf("exchange did not reach %s on the registry", sc.wantRegHit)
++			}
++			if sc.forbidRegPath != "" && reg.hitOnPath(sc.forbidRegPath) {
++				t.Fatalf("request reached forbidden path %s", sc.forbidRegPath)
++			}
++			if !sc.attackerMayReceiveCreds {
++				if n := att.credentialHits(); n != 0 {
++					t.Fatalf("attacker received %d credentialed requests", n)
++				}
++				if sc.attackerSilent && att.anyHits() {
++					t.Fatal("attacker realm was contacted")
++				}
++			} else if !att.anyHits() {
++				t.Fatal("ordinary cross-host realm was not used")
++			}
++		})
++	}
++}
+diff --git a/internal/backend/remote-state/oras/backend.go b/internal/backend/remote-state/oras/backend.go
+new file mode 100644
+index 000000000..0d8e265ac
+--- /dev/null
++++ b/internal/backend/remote-state/oras/backend.go
+@@ -0,0 +1,429 @@
++package oras
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"os/exec"
++	"sort"
++	"strings"
++	"time"
++
++	orasstate "github.com/vmvarela/oras-state"
++
++	"github.com/opentofu/opentofu/internal/backend"
++	"github.com/opentofu/opentofu/internal/command/cliconfig"
++	"github.com/opentofu/opentofu/internal/command/cliconfig/ociauthconfig"
++	"github.com/opentofu/opentofu/internal/encryption"
++	"github.com/opentofu/opentofu/internal/httpclient"
++	"github.com/opentofu/opentofu/internal/legacy/helper/schema"
++	"github.com/opentofu/opentofu/internal/logging"
++	"github.com/opentofu/opentofu/internal/states/remote"
++	"github.com/opentofu/opentofu/internal/states/statemgr"
++	"github.com/opentofu/opentofu/version"
++
++	orasRegistry "oras.land/oras-go/v2/registry"
++	orasRemote "oras.land/oras-go/v2/registry/remote"
++	orasAuth "oras.land/oras-go/v2/registry/remote/auth"
++)
++
++const (
++	envVarRetryMax     = "TF_BACKEND_ORAS_RETRY_MAX"
++	envVarRetryWaitMin = "TF_BACKEND_ORAS_RETRY_WAIT_MIN"
++	envVarRetryWaitMax = "TF_BACKEND_ORAS_RETRY_WAIT_MAX"
++	envVarLockTTL      = "TF_BACKEND_ORAS_LOCK_TTL"
++	envVarRateLimit    = "TF_BACKEND_ORAS_RATE_LIMIT"
++	envVarRateBurst    = "TF_BACKEND_ORAS_RATE_LIMIT_BURST"
++	envVarMaxStateSize = "TF_BACKEND_ORAS_MAX_STATE_SIZE"
++)
++
++type Backend struct {
++	*schema.Backend
++	encryption encryption.StateEncryption
++
++	repository   string
++	insecure     bool
++	caFile       string
++	compression  string
++	lockTTL      time.Duration
++	rateLimit    int
++	rateBurst    int
++	retryCfg     RetryConfig
++	stateMaxSize int64
++
++	versioningMaxVersions int
++
++	orasCredsPolicy cliconfigORASCredentialsPolicy
++	client          *orasstate.Client
++}
++
++func New(enc encryption.StateEncryption) backend.Backend {
++	s := &schema.Backend{
++		Schema: map[string]*schema.Schema{
++			"repository": {
++				Type:        schema.TypeString,
++				Required:    true,
++				Description: "OCI repository in the form <registry>/<repository>, without tag or digest. Must be set in the backend block; environment variables are not read.",
++			},
++			"insecure": {
++				Type:        schema.TypeBool,
++				Optional:    true,
++				Default:     false,
++				Description: "Use an insecure OCI registry connection",
++			},
++			"ca_file": {
++				Type:        schema.TypeString,
++				Optional:    true,
++				Description: "Path to a PEM-encoded CA certificate bundle to trust when communicating with the OCI registry",
++			},
++			"retry_max": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarRetryMax, 2),
++				Description: "The number of retries for transient registry requests.",
++			},
++			"retry_wait_min": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarRetryWaitMin, 1),
++				Description: "The minimum time in seconds to wait between transient registry request attempts.",
++			},
++			"retry_wait_max": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarRetryWaitMax, 30),
++				Description: "The maximum time in seconds to wait between transient registry request attempts.",
++			},
++			"compression": {
++				Type:        schema.TypeString,
++				Optional:    true,
++				Default:     "none",
++				Description: "State compression. Supported values: none, gzip.",
++			},
++			"lock_ttl": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarLockTTL, 0),
++				Description: "Lock TTL in seconds. 0 disables automatic stale lock clearing.",
++			},
++			"rate_limit": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarRateLimit, 0),
++				Description: "Maximum registry requests per second. 0 disables rate limiting.",
++			},
++			"rate_limit_burst": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarRateBurst, 0),
++				Description: "Maximum burst size for registry requests when rate limiting is enabled. 0 defaults to 1.",
++			},
++			"max_versions": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				Default:     0,
++				Description: "Maximum number of historical state versions to retain. 0 disables versioning.",
++			},
++			"max_state_size": {
++				Type:        schema.TypeInt,
++				Optional:    true,
++				DefaultFunc: schema.EnvDefaultFunc(envVarMaxStateSize, 0),
++				Description: "Maximum state size in bytes. 0 uses the 256 MiB default.",
++			},
++		},
++	}
++
++	b := &Backend{Backend: s, encryption: enc}
++	b.Backend.ConfigureFunc = b.configure
++	return b
++}
++
++func (b *Backend) configure(ctx context.Context) error {
++	data := schema.FromContextBackendConfig(ctx)
++
++	repository := data.Get("repository").(string)
++	if repository == "" {
++		return fmt.Errorf("repository must not be empty; set it in the backend block")
++	}
++
++	ref, err := orasRegistry.ParseReference(repository)
++	if err != nil {
++		return err
++	}
++	if ref.Reference != "" {
++		return fmt.Errorf("repository must not include a tag or digest")
++	}
++
++	insecure := data.Get("insecure").(bool)
++	if err := rejectInsecureGHCR(ref.Registry, insecure); err != nil {
++		return err
++	}
++	b.repository = repository
++	b.insecure = insecure
++	b.caFile = data.Get("ca_file").(string)
++
++	b.compression = strings.ToLower(strings.TrimSpace(data.Get("compression").(string)))
++	if b.compression == "" {
++		b.compression = "none"
++	}
++	if b.compression != "none" && b.compression != "gzip" {
++		return fmt.Errorf("unsupported compression %q (supported: none, gzip)", b.compression)
++	}
++
++	lockTTLSeconds := data.Get("lock_ttl").(int)
++	if lockTTLSeconds < 0 {
++		return fmt.Errorf("lock_ttl must be non-negative")
++	}
++	b.lockTTL = time.Duration(lockTTLSeconds) * time.Second
++
++	b.rateLimit = data.Get("rate_limit").(int)
++	b.rateBurst = data.Get("rate_limit_burst").(int)
++	if b.rateLimit < 0 {
++		return fmt.Errorf("rate_limit must be non-negative")
++	}
++	if b.rateBurst < 0 {
++		return fmt.Errorf("rate_limit_burst must be non-negative")
++	}
++
++	retryMax := data.Get("retry_max").(int)
++	retryWaitMin := time.Duration(data.Get("retry_wait_min").(int)) * time.Second
++	retryWaitMax := time.Duration(data.Get("retry_wait_max").(int)) * time.Second
++	b.retryCfg = RetryConfig{
++		MaxAttempts:       max(retryMax+1, 1),
++		InitialBackoff:    retryWaitMin,
++		MaxBackoff:        retryWaitMax,
++		BackoffMultiplier: 2,
++	}
++	if b.retryCfg.InitialBackoff <= 0 {
++		b.retryCfg.InitialBackoff = time.Second
++	}
++	if b.retryCfg.MaxBackoff > 0 && b.retryCfg.MaxBackoff < b.retryCfg.InitialBackoff {
++		b.retryCfg.MaxBackoff = b.retryCfg.InitialBackoff
++	}
++
++	b.versioningMaxVersions = max(data.Get("max_versions").(int), 0)
++
++	maxStateSize := data.Get("max_state_size").(int)
++	if maxStateSize < 0 {
++		return fmt.Errorf("max_state_size must be non-negative")
++	}
++	b.stateMaxSize = int64(maxStateSize)
++
++	cliCfg, diags := cliconfig.LoadConfig(ctx)
++	if diags.HasErrors() {
++		return diags.Err()
++	}
++	policy, err := cliCfg.OCICredentialsPolicy(ctx)
++	if err != nil {
++		return err
++	}
++	b.orasCredsPolicy = realORASCredentialsPolicy{policy: policy}
++
++	credFunc, err := b.orasCredsPolicy.CredentialFunc(ctx, b.repository)
++	if err != nil {
++		return err
++	}
++
++	httpClient, err := newHTTPClient(ref.Registry, b.insecure, b.caFile, b.rateLimit, b.rateBurst)
++	if err != nil {
++		return err
++	}
++
++	cfg := orasstate.Config{
++		WorkspaceLayout: orasstate.WorkspaceLayoutLegacy,
++		PlainHTTP:       b.insecure,
++		TLSSkipVerify:   b.insecure,
++		CAFile:          b.caFile,
++		Compression:     b.compression == "gzip",
++		LockTTL:         b.lockTTL,
++		MaxVersions:     b.versioningMaxVersions,
++		MaxStateSize:    b.stateMaxSize,
++		HTTPClient:      httpClient,
++		UserAgent:       httpclient.OpenTofuUserAgent(version.Version),
++	}
++	if credFunc != nil {
++		cfg.CredentialFunc = func(ctx context.Context, hostport string) (orasstate.Credential, error) {
++			cred, err := credFunc(ctx, hostport)
++			if err != nil {
++				return orasstate.Credential{}, err
++			}
++			return orasstate.Credential{
++				Username:    cred.Username,
++				Password:    cred.Password,
++				AccessToken: cred.AccessToken,
++			}, nil
++		}
++	}
++
++	b.client, err = orasstate.NewClient(ref.Registry, ref.Repository, cfg)
++	return err
++}
++
++func (b *Backend) StateMgr(_ context.Context, workspace string) (statemgr.Full, error) {
++	if b.client == nil {
++		return nil, fmt.Errorf("backend is not configured")
++	}
++	client := &RemoteClient{client: b.client, workspace: workspace, retryCfg: b.retryCfg}
++	return &historyState{
++		Full:       remote.NewState(client, b.encryption),
++		client:     b.client,
++		workspace:  workspace,
++		encryption: b.encryption,
++	}, nil
++}
++
++type historyState struct {
++	statemgr.Full
++	client     *orasstate.Client
++	workspace  string
++	encryption encryption.StateEncryption
++}
++
++var _ statemgr.History = (*historyState)(nil)
++
++func (s *historyState) ListVersions(ctx context.Context) ([]statemgr.StateVersion, error) {
++	versions, err := s.client.ListVersions(ctx, s.workspace)
++	if err != nil {
++		return nil, err
++	}
++	out := make([]statemgr.StateVersion, len(versions))
++	for i, version := range versions {
++		out[i] = statemgr.StateVersion{
++			Version:   version.Version,
++			UpdatedAt: version.UpdatedAt,
++			Digest:    version.Digest,
++		}
++	}
++	return out, nil
++}
++
++func (s *historyState) GetVersion(ctx context.Context, version int) ([]byte, error) {
++	data, err := s.client.GetVersion(ctx, s.workspace, version)
++	if err != nil {
++		return nil, err
++	}
++	plain, _, err := s.encryption.DecryptState(data)
++	if err != nil {
++		return nil, fmt.Errorf("decrypting historical state version %d: %w", version, err)
++	}
++	return plain, nil
++}
++
++func (b *Backend) Workspaces(ctx context.Context) ([]string, error) {
++	if b.client == nil {
++		return nil, fmt.Errorf("backend is not configured")
++	}
++	workspaces, err := withRetry(ctx, b.retryCfg, func(ctx context.Context) ([]string, error) {
++		return b.client.List(ctx)
++	})
++	if err != nil {
++		return nil, err
++	}
++	for _, workspace := range workspaces {
++		if workspace == backend.DefaultStateName {
++			return workspaces, nil
++		}
++	}
++	workspaces = append(workspaces, backend.DefaultStateName)
++	sort.Strings(workspaces)
++	return workspaces, nil
++}
++
++func (b *Backend) DeleteWorkspace(ctx context.Context, name string, _ bool) error {
++	if b.client == nil {
++		return fmt.Errorf("backend is not configured")
++	}
++	if name == backend.DefaultStateName || name == "" {
++		return fmt.Errorf("can't delete default state")
++	}
++	// Not retried: a retry re-resolves the workspace and could delete a newer writer's state.
++	return b.client.DeleteWorkspace(ctx, name)
++}
++
++type cliconfigORASCredentialsPolicy interface {
++	CredentialFunc(ctx context.Context, repository string) (credentialFunc, error)
++}
++
++type credentialFunc func(ctx context.Context, hostport string) (orasAuth.Credential, error)
++
++type realORASCredentialsPolicy struct {
++	policy ociauthconfig.CredentialsConfigs
++}
++
++func (p realORASCredentialsPolicy) CredentialFunc(ctx context.Context, repository string) (credentialFunc, error) {
++	repo, err := orasRemote.NewRepository(repository)
++	if err != nil {
++		return nil, err
++	}
++	registryDomain := repo.Reference.Registry
++	repositoryPath := repo.Reference.Repository
++	lookupEnv := dockerCredentialHelperEnv{}
++	ghTokens := &githubTokenSource{}
++
++	return func(ctx context.Context, _ string) (orasAuth.Credential, error) {
++		// GitHub tokens are only ever presented to GHCR; other registries never see them.
++		if strings.EqualFold(registryDomain, ghcrRegistry) {
++			token, err := ghTokens.token(ctx)
++			if err != nil {
++				logging.HCLogger().Warn("GitHub token unavailable for GHCR; falling back to OCI credentials", "error", err)
++			} else if token != "" {
++				return ghcrCredential(token), nil
++			}
++		}
++
++		source, err := p.policy.CredentialsSourceForRepository(ctx, registryDomain, repositoryPath)
++		if err != nil {
++			// No configured credentials means anonymous access, as in the source branch below.
++			if ociauthconfig.IsCredentialsNotFoundError(err) {
++				return orasAuth.EmptyCredential, nil
++			}
++			return orasAuth.EmptyCredential, err
++		}
++		creds, err := source.Credentials(ctx, lookupEnv)
++		if err != nil {
++			if ociauthconfig.IsCredentialsNotFoundError(err) {
++				return orasAuth.EmptyCredential, nil
++			}
++			return orasAuth.EmptyCredential, err
++		}
++		return creds.ToORASCredential(), nil
++	}, nil
++}
++
++type dockerCredentialHelperEnv struct{}
++
++var _ ociauthconfig.CredentialsLookupEnvironment = dockerCredentialHelperEnv{}
++
++const credentialHelperTimeout = 30 * time.Second
++
++func (dockerCredentialHelperEnv) QueryDockerCredentialHelper(ctx context.Context, helperName string, serverURL string) (ociauthconfig.DockerCredentialHelperGetResult, error) {
++	exe := "docker-credential-" + helperName
++
++	tctx, cancel := context.WithTimeout(ctx, credentialHelperTimeout)
++	defer cancel()
++
++	cmd := exec.CommandContext(tctx, exe, "get")
++	cmd.Stdin = strings.NewReader(serverURL)
++	stdout, err := cmd.Output()
++	if err != nil {
++		if tctx.Err() == context.DeadlineExceeded {
++			logging.HCLogger().Warn("credential helper timed out", "helper", exe, "timeout", credentialHelperTimeout)
++			return ociauthconfig.DockerCredentialHelperGetResult{}, fmt.Errorf("credential helper %q timed out after %s: %w", exe, credentialHelperTimeout, context.DeadlineExceeded)
++		}
++		var exitErr *exec.ExitError
++		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
++			return ociauthconfig.DockerCredentialHelperGetResult{}, ociauthconfig.NewCredentialsNotFoundError(err)
++		}
++		return ociauthconfig.DockerCredentialHelperGetResult{}, err
++	}
++
++	var result ociauthconfig.DockerCredentialHelperGetResult
++	if err := json.Unmarshal(stdout, &result); err != nil {
++		return ociauthconfig.DockerCredentialHelperGetResult{}, fmt.Errorf("parsing credential helper response: %w", err)
++	}
++	if result.ServerURL == "" {
++		result.ServerURL = serverURL
++	}
++	return result, nil
++}
+diff --git a/internal/backend/remote-state/oras/client.go b/internal/backend/remote-state/oras/client.go
+new file mode 100644
+index 000000000..452c0851d
+--- /dev/null
++++ b/internal/backend/remote-state/oras/client.go
+@@ -0,0 +1,113 @@
++package oras
++
++import (
++	"context"
++	"crypto/md5"
++	"errors"
++	"fmt"
++
++	orasstate "github.com/vmvarela/oras-state"
++
++	"github.com/opentofu/opentofu/internal/states/remote"
++	"github.com/opentofu/opentofu/internal/states/statemgr"
++)
++
++type RemoteClient struct {
++	client    *orasstate.Client
++	workspace string
++	retryCfg  RetryConfig
++	lockID    string // id returned by Lock; verified before Put
++}
++
++var _ remote.Client = (*RemoteClient)(nil)
++var _ remote.ClientLocker = (*RemoteClient)(nil)
++
++func (c *RemoteClient) Get(ctx context.Context) (*remote.Payload, error) {
++	data, err := withRetry(ctx, c.retryCfg, func(ctx context.Context) ([]byte, error) {
++		return c.client.Get(ctx, c.workspace)
++	})
++	if err != nil {
++		return nil, err
++	}
++	if data == nil {
++		return nil, nil
++	}
++	sum := md5.Sum(data)
++	return &remote.Payload{MD5: sum[:], Data: data}, nil
++}
++
++func (c *RemoteClient) Put(ctx context.Context, data []byte) error {
++	// Fail closed if the lock is gone or its lease expired: another process
++	// may have taken over and written state since we read it.
++	if c.lockID != "" {
++		if err := withRetryNoResult(ctx, c.retryCfg, func(ctx context.Context) error {
++			return c.client.VerifyLock(ctx, c.workspace, c.lockID)
++		}); err != nil {
++			return fmt.Errorf("refusing to write state: this process no longer holds the state lock: %w", err)
++		}
++	}
++	// Retrying the whole Put could publish after the lease expired, unchecked.
++	if err := c.client.Put(ctx, c.workspace, data); err != nil {
++		return err
++	}
++	c.client.WaitForRetention()
++	return nil
++}
++
++// Delete is not retried: a retry re-resolves the workspace and could delete a newer writer's state.
++func (c *RemoteClient) Delete(ctx context.Context) error {
++	return c.client.Delete(ctx, c.workspace)
++}
++
++func (c *RemoteClient) Lock(ctx context.Context, info *statemgr.LockInfo) (string, error) {
++	shared := orasstate.LockInfo{}
++	if info != nil {
++		shared = orasstate.LockInfo{
++			ID:        info.ID,
++			Operation: info.Operation,
++			Info:      info.Info,
++			Who:       info.Who,
++			Version:   info.Version,
++			Created:   info.Created,
++			Path:      info.Path,
++		}
++	}
++
++	id, err := withRetry(ctx, c.retryCfg, func(ctx context.Context) (string, error) {
++		return c.client.Lock(ctx, c.workspace, shared)
++	})
++	if err == nil {
++		c.lockID = id
++		return id, nil
++	}
++
++	var lockErr *orasstate.LockError
++	if errors.As(err, &lockErr) {
++		var lockInfo *statemgr.LockInfo
++		if lockErr.Info != nil {
++			lockInfo = &statemgr.LockInfo{
++				ID:        lockErr.Info.ID,
++				Operation: lockErr.Info.Operation,
++				Info:      lockErr.Info.Info,
++				Who:       lockErr.Info.Who,
++				Version:   lockErr.Info.Version,
++				Created:   lockErr.Info.Created,
++				Path:      lockErr.Info.Path,
++			}
++		}
++		return "", &statemgr.LockError{Info: lockInfo, Err: lockErr.Err}
++	}
++	return "", err
++}
++
++func (c *RemoteClient) Unlock(ctx context.Context, id string) error {
++	if err := withRetryNoResult(ctx, c.retryCfg, func(ctx context.Context) error {
++		return c.client.Unlock(ctx, c.workspace, id)
++	}); err != nil {
++		return err
++	}
++	if id == c.lockID {
++		c.lockID = ""
++	}
++	return nil
++}
+diff --git a/internal/backend/remote-state/oras/delete_retry_test.go b/internal/backend/remote-state/oras/delete_retry_test.go
+new file mode 100644
+index 000000000..a47915da1
+--- /dev/null
++++ b/internal/backend/remote-state/oras/delete_retry_test.go
+@@ -0,0 +1,70 @@
++package oras
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	orasstate "github.com/vmvarela/oras-state"
++)
++
++// A destructive delete must not be retried as a whole: a retry re-resolves the
++// workspace and could delete a newer writer's state. Every request the adapter
++// issues for one Delete must match a single library call.
++func TestDeleteIsNotRetriedAsAWhole(t *testing.T) {
++	t.Setenv("ORAS_TOKEN", "")
++	var requests atomic.Int64
++	// The server answers too slowly for the client timeout. The resulting net
++	// timeout is transient for isTransientError, so a whole-operation retry would
++	// re-issue the call. (A 503 is not used: its error type is not matched by
++	// isTransientError for this library.)
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		requests.Add(1)
++		time.Sleep(200 * time.Millisecond)
++	}))
++	t.Cleanup(srv.Close)
++
++	newLibClient := func(t *testing.T) *orasstate.Client {
++		t.Helper()
++		c, err := orasstate.NewClient(strings.TrimPrefix(srv.URL, "http://"), "ns/state", orasstate.Config{
++			WorkspaceLayout: orasstate.WorkspaceLayoutLegacy,
++			PlainHTTP:       true,
++			HTTPClient:      &http.Client{Timeout: 30 * time.Millisecond},
++		})
++		if err != nil {
++			t.Fatal(err)
++		}
++		return c
++	}
++	retry := RetryConfig{MaxAttempts: 3, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, BackoffMultiplier: 2}
++	ctx := context.Background()
++
++	requests.Store(0)
++	_ = newLibClient(t).Delete(ctx, "ws")
++	baseline := requests.Load()
++	if baseline == 0 {
++		t.Fatal("library Delete issued no requests; the regression check would be vacuous")
++	}
++
++	t.Run("RemoteClient.Delete", func(t *testing.T) {
++		requests.Store(0)
++		rc := &RemoteClient{client: newLibClient(t), workspace: "ws", retryCfg: retry}
++		_ = rc.Delete(ctx)
++		if got := requests.Load(); got != baseline {
++			t.Fatalf("Delete issued %d requests, want %d (one library call)", got, baseline)
++		}
++	})
++
++	t.Run("Backend.DeleteWorkspace", func(t *testing.T) {
++		requests.Store(0)
++		b := &Backend{client: newLibClient(t), retryCfg: retry}
++		_ = b.DeleteWorkspace(ctx, "ws", false)
++		if got := requests.Load(); got != baseline {
++			t.Fatalf("DeleteWorkspace issued %d requests, want %d (one library call)", got, baseline)
++		}
++	})
++}
+diff --git a/internal/backend/remote-state/oras/github_token.go b/internal/backend/remote-state/oras/github_token.go
+new file mode 100644
+index 000000000..f657980c0
+--- /dev/null
++++ b/internal/backend/remote-state/oras/github_token.go
+@@ -0,0 +1,84 @@
++package oras
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"os"
++	"os/exec"
++	"strings"
++	"sync"
++	"time"
++
++	orasAuth "oras.land/oras-go/v2/registry/remote/auth"
++)
++
++const ghcrRegistry = "ghcr.io"
++
++// ghAuthTokenTimeout bounds the gh CLI call. It is a variable so tests can shorten it.
++var ghAuthTokenTimeout = 10 * time.Second
++
++// githubTokenSource resolves a GitHub token for GHCR: GH_TOKEN, then GITHUB_TOKEN,
++// then `gh auth token`. The gh result is cached so retries do not re-run the CLI.
++type githubTokenSource struct {
++	mu       sync.Mutex
++	cliDone  bool
++	cliToken string
++	cliErr   error
++}
++
++// token returns "" and nil when no GitHub token is available. Errors never contain
++// token values or gh output.
++func (s *githubTokenSource) token(ctx context.Context) (string, error) {
++	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
++		if t := strings.TrimSpace(os.Getenv(name)); t != "" {
++			return t, nil
++		}
++	}
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if !s.cliDone {
++		s.cliToken, s.cliErr = ghAuthToken(ctx)
++		s.cliDone = true
++	}
++	return s.cliToken, s.cliErr
++}
++
++// ghAuthToken runs `gh auth token` non-interactively with a bounded timeout.
++// gh's stdin is /dev/null and its stderr is captured but never reported.
++func ghAuthToken(ctx context.Context) (string, error) {
++	exe, err := exec.LookPath("gh")
++	if err != nil {
++		return "", fmt.Errorf("gh CLI not found")
++	}
++
++	tctx, cancel := context.WithTimeout(ctx, ghAuthTokenTimeout)
++	defer cancel()
++	cmd := exec.CommandContext(tctx, exe, "auth", "token", "--hostname", "github.com")
++	cmd.Env = append(os.Environ(), "GH_PROMPT_DISABLED=1")
++	cmd.WaitDelay = time.Second
++	out, err := cmd.Output()
++	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
++		return "", fmt.Errorf("gh auth token timed out after %s", ghAuthTokenTimeout)
++	}
++	if err != nil {
++		var exitErr *exec.ExitError
++		if errors.As(err, &exitErr) {
++			return "", fmt.Errorf("gh auth token failed with exit code %d", exitErr.ExitCode())
++		}
++		return "", fmt.Errorf("gh auth token could not run")
++	}
++
++	token := strings.TrimSpace(string(out))
++	if token == "" {
++		return "", fmt.Errorf("gh auth token returned no token")
++	}
++	return token, nil
++}
++
++// ghcrCredential uses basic auth so GHCR's token endpoint exchanges the token.
++// AccessToken is never set: GHCR rejects a raw Bearer token with 403.
++func ghcrCredential(token string) orasAuth.Credential {
++	// GHCR accepts any non-empty username with a token (Docker CLI convention).
++	return orasAuth.Credential{Username: "x", Password: token}
++}
+diff --git a/internal/backend/remote-state/oras/github_token_test.go b/internal/backend/remote-state/oras/github_token_test.go
+new file mode 100644
+index 000000000..a30b3b066
+--- /dev/null
++++ b/internal/backend/remote-state/oras/github_token_test.go
+@@ -0,0 +1,218 @@
++package oras
++
++import (
++	"context"
++	"iter"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/opentofu/opentofu/internal/command/cliconfig/ociauthconfig"
++	orasAuth "oras.land/oras-go/v2/registry/remote/auth"
++)
++
++// fakeGH puts a fake gh script first on PATH; PATH is otherwise empty so the
++// real gh cannot be reached. It returns the directory holding the script.
++func fakeGH(t *testing.T, body string) string {
++	t.Helper()
++	dir := t.TempDir()
++	script := "#!/bin/sh\n" + body + "\n"
++	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	t.Setenv("PATH", dir)
++	return dir
++}
++
++func clearGitHubEnv(t *testing.T) {
++	t.Helper()
++	t.Setenv("GH_TOKEN", "")
++	t.Setenv("GITHUB_TOKEN", "")
++}
++
++func TestGitHubTokenPrecedence(t *testing.T) {
++	marker := filepath.Join(t.TempDir(), "gh-called")
++	tests := []struct {
++		name    string
++		ghToken string
++		gitTok  string
++		cliBody string
++		want    string
++		cliRan  bool
++	}{
++		{name: "GH_TOKEN wins", ghToken: "gh-token", gitTok: "github-token", want: "gh-token"},
++		{name: "blank GH_TOKEN falls to GITHUB_TOKEN", ghToken: "  ", gitTok: "github-token", want: "github-token"},
++		{name: "gh CLI used last, trimmed", want: "cli-token", cliBody: "printf 'cli-token\\n'", cliRan: true},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			clearGitHubEnv(t)
++			t.Setenv("GH_TOKEN", tc.ghToken)
++			t.Setenv("GITHUB_TOKEN", tc.gitTok)
++			fakeGH(t, "/usr/bin/touch "+marker+"\n"+tc.cliBody)
++			_ = os.Remove(marker)
++
++			got, err := (&githubTokenSource{}).token(context.Background())
++			if err != nil {
++				t.Fatalf("token() error = %v", err)
++			}
++			if got != tc.want {
++				t.Fatalf("token() = %q, want %q", got, tc.want)
++			}
++			_, statErr := os.Stat(marker)
++			if ran := statErr == nil; ran != tc.cliRan {
++				t.Fatalf("gh invoked = %v, want %v", ran, tc.cliRan)
++			}
++		})
++	}
++}
++
++func TestGitHubTokenNoneAvailable(t *testing.T) {
++	clearGitHubEnv(t)
++	t.Setenv("PATH", t.TempDir()) // no gh on PATH
++	got, err := (&githubTokenSource{}).token(context.Background())
++	if err == nil || got != "" {
++		t.Fatalf("token() = %q, %v; want empty token and gh-not-found error", got, err)
++	}
++}
++
++func TestGitHubTokenCLIErrorsDoNotDisclose(t *testing.T) {
++	const leak = "SECRET-SHOULD-NOT-APPEAR"
++	clearGitHubEnv(t)
++	fakeGH(t, "printf '"+leak+"' >&2\nprintf '"+leak+"'\nexit 4")
++	_, err := (&githubTokenSource{}).token(context.Background())
++	if err == nil {
++		t.Fatal("expected error from failing gh")
++	}
++	if !strings.Contains(err.Error(), "exit code 4") {
++		t.Fatalf("error = %q, want exit code", err)
++	}
++	if strings.Contains(err.Error(), leak) {
++		t.Fatalf("error leaked gh output: %q", err)
++	}
++}
++
++func TestGitHubTokenCLIEmptyOutput(t *testing.T) {
++	clearGitHubEnv(t)
++	fakeGH(t, "exit 0")
++	if _, err := (&githubTokenSource{}).token(context.Background()); err == nil || !strings.Contains(err.Error(), "no token") {
++		t.Fatalf("err = %v, want no-token error", err)
++	}
++}
++
++func TestGitHubTokenCLITimeoutIsBounded(t *testing.T) {
++	clearGitHubEnv(t)
++	prev := ghAuthTokenTimeout
++	ghAuthTokenTimeout = 100 * time.Millisecond
++	t.Cleanup(func() { ghAuthTokenTimeout = prev })
++	fakeGH(t, "exec /bin/sleep 30")
++
++	start := time.Now()
++	_, err := (&githubTokenSource{}).token(context.Background())
++	if err == nil || !strings.Contains(err.Error(), "timed out") {
++		t.Fatalf("err = %v, want timeout", err)
++	}
++	if elapsed := time.Since(start); elapsed > 10*time.Second {
++		t.Fatalf("gh call took %s, expected bounded", elapsed)
++	}
++}
++
++func TestGitHubTokenCLIIsCached(t *testing.T) {
++	clearGitHubEnv(t)
++	counter := filepath.Join(t.TempDir(), "calls")
++	fakeGH(t, "printf x >> "+counter+"\nprintf 'cli-token'")
++	src := &githubTokenSource{}
++	for range 3 {
++		if got, err := src.token(context.Background()); err != nil || got != "cli-token" {
++			t.Fatalf("token() = %q, %v", got, err)
++		}
++	}
++	data, err := os.ReadFile(counter)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(data) != 1 {
++		t.Fatalf("gh ran %d times, want 1", len(data))
++	}
++}
++
++// staticConfig supplies Docker-style credentials for one registry, standing in for
++// ~/.docker/config.json.
++type staticConfig struct {
++	registry string
++	creds    ociauthconfig.Credentials
++}
++
++func (c staticConfig) CredentialsSourcesForRepository(_ context.Context, registryDomain, _ string) iter.Seq2[ociauthconfig.CredentialsSource, error] {
++	return func(yield func(ociauthconfig.CredentialsSource, error) bool) {
++		if registryDomain == c.registry {
++			yield(ociauthconfig.NewStaticCredentialsSource(c.creds, ociauthconfig.DomainCredentialsSpecificity), nil)
++		}
++	}
++}
++
++func (c staticConfig) CredentialsConfigLocationForUI() string { return "test" }
++
++func credentialFuncFor(t *testing.T, repository string, cfgs ...ociauthconfig.CredentialsConfig) credentialFunc {
++	t.Helper()
++	fn, err := realORASCredentialsPolicy{policy: ociauthconfig.NewCredentialsConfigs(cfgs)}.CredentialFunc(context.Background(), repository)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return fn
++}
++
++func TestGHCRCredentialFuncPrecedenceAndFallback(t *testing.T) {
++	docker := staticConfig{registry: "ghcr.io", creds: ociauthconfig.NewBasicAuthCredentials("docker-user", "docker-pass")}
++
++	t.Run("GH_TOKEN is exchanged as basic auth, never AccessToken", func(t *testing.T) {
++		clearGitHubEnv(t)
++		t.Setenv("GH_TOKEN", "gh-token")
++		cred, err := credentialFuncFor(t, "ghcr.io/org/state", docker)(context.Background(), "")
++		if err != nil {
++			t.Fatal(err)
++		}
++		want := orasAuth.Credential{Username: "x", Password: "gh-token"}
++		if cred != want {
++			t.Fatalf("cred = %+v, want %+v", cred, want)
++		}
++	})
++
++	t.Run("gh failure falls back to Docker credentials", func(t *testing.T) {
++		clearGitHubEnv(t)
++		fakeGH(t, "exit 1")
++		cred, err := credentialFuncFor(t, "ghcr.io/org/state", docker)(context.Background(), "")
++		if err != nil {
++			t.Fatal(err)
++		}
++		if cred.Username != "docker-user" || cred.Password != "docker-pass" {
++			t.Fatalf("cred = %+v, want docker fallback", cred)
++		}
++	})
++
++	t.Run("no GitHub token and no Docker credentials is anonymous", func(t *testing.T) {
++		clearGitHubEnv(t)
++		t.Setenv("PATH", t.TempDir())
++		cred, err := credentialFuncFor(t, "ghcr.io/org/state")(context.Background(), "")
++		if err != nil {
++			t.Fatalf("err = %v, want anonymous", err)
++		}
++		if cred != orasAuth.EmptyCredential {
++			t.Fatalf("cred = %+v, want empty", cred)
++		}
++	})
++
++	t.Run("GitHub token is never sent to other registries", func(t *testing.T) {
++		clearGitHubEnv(t)
++		t.Setenv("GH_TOKEN", "gh-token")
++		cred, err := credentialFuncFor(t, "registry.example.com/org/state")(context.Background(), "")
++		if err != nil {
++			t.Fatalf("err = %v, want anonymous", err)
++		}
++		if cred != orasAuth.EmptyCredential {
++			t.Fatalf("GitHub token leaked to non-GHCR registry: %+v", cred)
++		}
++	})
++}
+diff --git a/internal/backend/remote-state/oras/repository_source.go b/internal/backend/remote-state/oras/repository_source.go
+new file mode 100644
+index 000000000..703573d7c
+--- /dev/null
++++ b/internal/backend/remote-state/oras/repository_source.go
+@@ -0,0 +1,105 @@
++package oras
++
++import (
++	"reflect"
++	"strings"
++
++	"github.com/hashicorp/hcl/v2"
++	"github.com/hashicorp/hcl/v2/hclsyntax"
++	"github.com/zclconf/go-cty/cty"
++)
++
++var repositorySchema = &hcl.BodySchema{Attributes: []hcl.AttributeSchema{{Name: "repository"}}}
++
++var hclsyntaxPkgPath = reflect.TypeOf(hclsyntax.LiteralValueExpr{}).PkgPath()
++
++// CheckLiteralRepository requires repository to be a plain string literal in the
++// backend block and forbids -backend-config from setting it. backendBlock is the
++// configured block body; override is the merged -backend-config body, or nil.
++// Variables, locals, functions, conditionals, and null are rejected, because
++// OpenTofu may evaluate them from TF_VAR_* or other context.
++func CheckLiteralRepository(backendBlock, override hcl.Body) hcl.Diagnostics {
++	if backendBlock == nil {
++		return hcl.Diagnostics{{
++			Severity: hcl.DiagError,
++			Summary:  "Missing backend block",
++			Detail:   `backend "oras" must be declared with repository set in the backend block.`,
++		}}
++	}
++	content, _, diags := backendBlock.PartialContent(repositorySchema)
++	if diags.HasErrors() {
++		return diags
++	}
++	attr, ok := content.Attributes["repository"]
++	if !ok {
++		return hcl.Diagnostics{{
++			Severity: hcl.DiagError,
++			Summary:  "Missing repository",
++			Detail:   `backend "oras" requires repository to be set literally in the backend block. Environment variables and -backend-config cannot provide it.`,
++		}}
++	}
++	if !isLiteralRepository(attr.Expr) {
++		return hcl.Diagnostics{{
++			Severity: hcl.DiagError,
++			Summary:  "repository must be a literal string",
++			Detail:   `backend "oras" requires repository to be a plain string literal in the backend block. Variables, locals, functions, and null are not allowed.`,
++			Subject:  attr.Expr.Range().Ptr(),
++		}}
++	}
++	if override == nil {
++		return nil
++	}
++	overrideContent, _, diags := override.PartialContent(repositorySchema)
++	if diags.HasErrors() {
++		return diags
++	}
++	if attr, ok := overrideContent.Attributes["repository"]; ok {
++		return hcl.Diagnostics{{
++			Severity: hcl.DiagError,
++			Summary:  "repository must come from the backend block",
++			Detail:   `-backend-config cannot set repository for backend "oras"; set it in the backend block.`,
++			Subject:  attr.Range.Ptr(),
++		}}
++	}
++	return nil
++}
++
++// isLiteralRepository accepts only a string literal written in the configuration.
++// Native HCL syntax must be a plain literal. Other syntaxes (JSON) return string
++// values verbatim when evaluated without context, while OpenTofu evaluates "${...}"
++// and "%{...}" in them. So a JSON value containing a template opener is rejected,
++// even one that looks like a function call, and so is any escaped form.
++func isLiteralRepository(expr hcl.Expression) bool {
++	if expr == nil {
++		return false
++	}
++	if reflect.TypeOf(expr).Elem().PkgPath() == hclsyntaxPkgPath {
++		switch e := expr.(type) {
++		case *hclsyntax.TemplateExpr:
++			if len(e.Parts) == 0 {
++				return true // the empty string literal
++			}
++			return len(e.Parts) == 1 && isLiteralString(e.Parts[0])
++		case *hclsyntax.LiteralValueExpr:
++			return isLiteralString(e)
++		}
++		return false
++	}
++	if len(expr.Variables()) != 0 {
++		return false
++	}
++	v, diags := expr.Value(nil)
++	if diags.HasErrors() || v.Type() != cty.String || !v.IsKnown() || v.IsNull() {
++		return false
++	}
++	s := v.AsString()
++	return !strings.Contains(s, "${") && !strings.Contains(s, "%{")
++}
++
++func isLiteralString(expr hcl.Expression) bool {
++	lit, ok := expr.(*hclsyntax.LiteralValueExpr)
++	if !ok {
++		return false
++	}
++	return lit.Val.Type() == cty.String && lit.Val.IsKnown() && !lit.Val.IsNull()
++}
+diff --git a/internal/backend/remote-state/oras/repository_source_test.go b/internal/backend/remote-state/oras/repository_source_test.go
+new file mode 100644
+index 000000000..0970a4c4f
+--- /dev/null
++++ b/internal/backend/remote-state/oras/repository_source_test.go
+@@ -0,0 +1,95 @@
++package oras
++
++import (
++	"testing"
++
++	"github.com/hashicorp/hcl/v2"
++	"github.com/hashicorp/hcl/v2/hclsyntax"
++	hcljson "github.com/hashicorp/hcl/v2/json"
++)
++
++func parseBody(t *testing.T, src string) hcl.Body {
++	t.Helper()
++	f, diags := hclsyntax.ParseConfig([]byte(src), "backend.tf", hcl.InitialPos)
++	if diags.HasErrors() {
++		t.Fatal(diags)
++	}
++	return f.Body
++}
++
++func parseJSONBody(t *testing.T, src string) hcl.Body {
++	t.Helper()
++	f, diags := hcljson.Parse([]byte(src), "backend.tf.json")
++	if diags.HasErrors() {
++		t.Fatal(diags)
++	}
++	return f.Body
++}
++
++// JSON strings are returned verbatim without a context, so the check must reject
++// any template opener, not only variables and functions.
++func TestCheckLiteralRepositoryJSON(t *testing.T) {
++	tests := []struct {
++		name    string
++		json    string
++		wantErr bool
++	}{
++		{"plain literal", `{"repository": "ghcr.io/org/state"}`, false},
++		{"trailing dollar is not a template", `{"repository": "ghcr.io/org/state$"}`, false},
++		{"file() interpolation", `{"repository": "${file(\"repo.txt\")}"}`, true},
++		{"variable interpolation", `{"repository": "${var.repo}"}`, true},
++		{"local interpolation", `{"repository": "${local.repo}"}`, true},
++		{"template directive", `{"repository": "%{ if true }ghcr.io/a/b%{ endif }"}`, true},
++		{"escaped interpolation", `{"repository": "$${literal}"}`, true},
++		{"null", `{"repository": null}`, true},
++		{"number", `{"repository": 7}`, true},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			diags := CheckLiteralRepository(parseJSONBody(t, tc.json), nil)
++			if diags.HasErrors() != tc.wantErr {
++				t.Fatalf("errors = %v, wantErr %v", diags, tc.wantErr)
++			}
++		})
++	}
++}
++
++func TestCheckLiteralRepository(t *testing.T) {
++	literal := parseBody(t, `repository = "ghcr.io/org/state"`)
++	heredoc := parseBody(t, "repository = <<EOT\nghcr.io/org/state\nEOT\n")
++	noRepo := parseBody(t, `insecure = false`)
++	overrideRepo := parseBody(t, `repository = "ghcr.io/other/state"`)
++	overrideOther := parseBody(t, `compression = "gzip"`)
++
++	tests := []struct {
++		name     string
++		block    hcl.Body
++		override hcl.Body
++		wantErr  bool
++	}{
++		{"literal repository, no override", literal, nil, false},
++		{"literal heredoc repository", heredoc, nil, false},
++		{"literal repository, unrelated override", literal, overrideOther, false},
++		{"repository missing from block", noRepo, nil, true},
++		{"repository only in override", noRepo, overrideRepo, true},
++		{"override replaces literal repository", literal, overrideRepo, true},
++		{"nil block", nil, nil, true},
++		{"variable reference", parseBody(t, `repository = var.repo`), nil, true},
++		{"local reference", parseBody(t, `repository = local.repo`), nil, true},
++		{"function call", parseBody(t, `repository = lower("GHCR.io/org/state")`), nil, true},
++		{"file() call", parseBody(t, `repository = file("repo.txt")`), nil, true},
++		{"null", parseBody(t, `repository = null`), nil, true},
++		{"interpolation of literal", parseBody(t, `repository = "${"ghcr.io/org/state"}"`), nil, true},
++		{"interpolated variable", parseBody(t, `repository = "ghcr.io/${var.org}/state"`), nil, true},
++		{"conditional", parseBody(t, `repository = true ? "ghcr.io/a/b" : "ghcr.io/c/d"`), nil, true},
++		{"number", parseBody(t, `repository = 42`), nil, true},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			diags := CheckLiteralRepository(tc.block, tc.override)
++			if diags.HasErrors() != tc.wantErr {
++				t.Fatalf("errors = %v, wantErr %v", diags, tc.wantErr)
++			}
++		})
++	}
++}
+diff --git a/internal/backend/remote-state/oras/repository_test.go b/internal/backend/remote-state/oras/repository_test.go
+new file mode 100644
+index 000000000..d1a665405
+--- /dev/null
++++ b/internal/backend/remote-state/oras/repository_test.go
+@@ -0,0 +1,24 @@
++package oras
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/hashicorp/hcl/v2"
++	"github.com/hashicorp/hcl/v2/hcldec"
++)
++
++// The repository must come from HCL: an environment variable must not satisfy it.
++func TestRepositoryRequiresHCLNotEnv(t *testing.T) {
++	t.Setenv("TF_BACKEND_ORAS_REPOSITORY", "ghcr.io/org/state")
++
++	b := New(nil).(*Backend)
++	if attr := b.ConfigSchema().Attributes["repository"]; attr == nil || !attr.Required {
++		t.Fatal("repository must be a required HCL argument")
++	}
++
++	_, diags := hcldec.Decode(hcl.EmptyBody(), b.ConfigSchema().DecoderSpec(), nil)
++	if !diags.HasErrors() || !strings.Contains(diags.Error(), "repository") {
++		t.Fatalf("empty backend block with env var set: diags = %v, want missing repository argument", diags)
++	}
++}
+diff --git a/internal/backend/remote-state/oras/retry.go b/internal/backend/remote-state/oras/retry.go
+new file mode 100644
+index 000000000..33c9cde62
+--- /dev/null
++++ b/internal/backend/remote-state/oras/retry.go
+@@ -0,0 +1,97 @@
++package oras
++
++import (
++	"context"
++	"errors"
++	"net"
++	"net/http"
++	"strings"
++	"time"
++
++	orasErrcode "oras.land/oras-go/v2/registry/remote/errcode"
++)
++
++type RetryConfig struct {
++	MaxAttempts       int
++	InitialBackoff    time.Duration
++	MaxBackoff        time.Duration
++	BackoffMultiplier float64
++}
++
++func withRetry[T any](ctx context.Context, cfg RetryConfig, operation func(context.Context) (T, error)) (T, error) {
++	var zero T
++	var lastErr error
++	if cfg.MaxAttempts <= 0 {
++		cfg.MaxAttempts = 1
++	}
++	backoff := cfg.InitialBackoff
++	if backoff <= 0 {
++		backoff = time.Second
++	}
++
++	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
++		result, err := operation(ctx)
++		if err == nil {
++			return result, nil
++		}
++		lastErr = err
++		if ctx.Err() != nil {
++			return zero, ctx.Err()
++		}
++		if !isTransientError(err) {
++			return zero, err
++		}
++		if attempt == cfg.MaxAttempts {
++			break
++		}
++		select {
++		case <-ctx.Done():
++			return zero, ctx.Err()
++		case <-time.After(backoff):
++		}
++		backoff = time.Duration(float64(backoff) * cfg.BackoffMultiplier)
++		if cfg.MaxBackoff > 0 && backoff > cfg.MaxBackoff {
++			backoff = cfg.MaxBackoff
++		}
++	}
++	return zero, lastErr
++}
++
++func withRetryNoResult(ctx context.Context, cfg RetryConfig, operation func(context.Context) error) error {
++	_, err := withRetry(ctx, cfg, func(ctx context.Context) (struct{}, error) {
++		return struct{}{}, operation(ctx)
++	})
++	return err
++}
++
++func isTransientError(err error) bool {
++	if err == nil {
++		return false
++	}
++	var errResp *orasErrcode.ErrorResponse
++	if errors.As(err, &errResp) {
++		switch errResp.StatusCode {
++		case http.StatusTooManyRequests, http.StatusRequestTimeout, http.StatusBadGateway,
++			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
++			return true
++		default:
++			return false
++		}
++	}
++	var netErr net.Error
++	if errors.As(err, &netErr) {
++		return netErr.Timeout()
++	}
++	msg := strings.ToLower(err.Error())
++	return strings.Contains(msg, "connection reset") ||
++		strings.Contains(msg, "connection refused") ||
++		strings.Contains(msg, "i/o timeout") ||
++		strings.Contains(msg, "connection timeout") ||
++		strings.Contains(msg, "tls handshake timeout") ||
++		strings.Contains(msg, "context deadline exceeded") ||
++		strings.Contains(msg, "temporary failure in name resolution") ||
++		strings.Contains(msg, "no such host") ||
++		strings.Contains(msg, "unexpected eof") ||
++		strings.Contains(msg, "read: eof") ||
++		msg == "eof"
++}
+diff --git a/internal/backend/remote-state/oras/transport.go b/internal/backend/remote-state/oras/transport.go
+new file mode 100644
+index 000000000..15f1f4535
+--- /dev/null
++++ b/internal/backend/remote-state/oras/transport.go
+@@ -0,0 +1,168 @@
++package oras
++
++import (
++	"context"
++	"fmt"
++	"net/http"
++	"regexp"
++	"strings"
++
++	orasstate "github.com/vmvarela/oras-state"
++	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
++	"golang.org/x/time/rate"
++)
++
++// rejectInsecureGHCR refuses insecure transport for GHCR, where it would expose
++// GitHub credentials to plain HTTP or to an unverified TLS peer.
++func rejectInsecureGHCR(registry string, insecure bool) error {
++	if insecure && strings.EqualFold(registry, ghcrRegistry) {
++		return fmt.Errorf("insecure must be false for %s: GitHub credentials are never sent over plain HTTP or unverified TLS", ghcrRegistry)
++	}
++	return nil
++}
++
++func newHTTPClient(registry string, insecure bool, caFile string, rateLimit, rateBurst int) (*http.Client, error) {
++	client, err := orasstate.BuildHTTPClient(insecure, caFile)
++	if err != nil {
++		return nil, err
++	}
++
++	var rt http.RoundTripper = client.Transport
++	if rateLimit > 0 {
++		burst := rateBurst
++		if burst <= 0 {
++			burst = 1
++		}
++		rt = &rateLimitedRoundTripper{
++			limiter: rate.NewLimiter(rate.Limit(rateLimit), burst),
++			inner:   rt,
++		}
++	}
++	guard := &credentialGuard{
++		inner:    otelhttp.NewTransport(rt),
++		registry: strings.ToLower(registry),
++		insecure: insecure,
++	}
++	if strings.EqualFold(registry, ghcrRegistry) {
++		guard.ghcr = &ghcrEndpoints{tokenHost: ghcrRegistry, apiHost: ghcrAPIHost}
++	}
++	client.Transport = guard
++	return client, nil
++}
++
++// ghcrAPIHost serves the GitHub Packages API used by GHCR tag deletion.
++const ghcrAPIHost = "api.github.com"
++
++// ghcrEndpoints are the only destinations that may receive GitHub credentials
++// for GHCR. Token and registry requests go to tokenHost; version listing and
++// deletion go to apiHost. Tests substitute local hosts.
++type ghcrEndpoints struct {
++	tokenHost string
++	apiHost   string
++}
++
++var (
++	ghcrPackageVersionsPath = regexp.MustCompile(`^/(orgs|users)/[^/]+/packages/container/[^/]+/versions$`)
++	ghcrPackageVersionPath  = regexp.MustCompile(`^/(orgs|users)/[^/]+/packages/container/[^/]+/versions/[0-9]+$`)
++)
++
++// credentialGuard refuses to send credentials to a destination that is not an
++// intended one. oras-go follows the registry's bearer realm, and sends
++// credentials either as an Authorization header or, for an OAuth2 token request,
++// as a form body with no header. With TLS verification skipped, an attacker could
++// name their own realm. The guard checks every request and every redirect hop.
++type credentialGuard struct {
++	inner    http.RoundTripper
++	registry string // lowercase host[:port] of the state registry
++	insecure bool
++	ghcr     *ghcrEndpoints // nil unless the registry is GHCR
++}
++
++func (g *credentialGuard) RoundTrip(req *http.Request) (*http.Response, error) {
++	if credentialRequest(req) {
++		if err := g.checkDestination(req); err != nil {
++			return nil, err
++		}
++	}
++	return g.inner.RoundTrip(req)
++}
++
++// credentialRequest reports whether req carries credentials.
++func credentialRequest(req *http.Request) bool {
++	return req.Header.Get("Authorization") != "" || isFormBody(req)
++}
++
++// isFormBody reports whether req has a form body: oras-go's OAuth2 token request
++// sends username and password this way. The body is never read here.
++func isFormBody(req *http.Request) bool {
++	return req.Body != nil && req.Body != http.NoBody &&
++		strings.HasPrefix(strings.ToLower(req.Header.Get("Content-Type")), "application/x-www-form-urlencoded")
++}
++
++// checkDestination errors name only the method and host, never the credential,
++// the path, or the body.
++func (g *credentialGuard) checkDestination(req *http.Request) error {
++	host := strings.ToLower(req.URL.Host)
++	if g.ghcr != nil {
++		if g.allowedGHCR(req) {
++			return nil
++		}
++		return fmt.Errorf("refusing to send credentials to %s %s: GHCR credentials go only to the ghcr.io token endpoint and registry API and to the GitHub package-version API", req.Method, host)
++	}
++	if g.insecure {
++		if host == g.registry {
++			return nil
++		}
++		return fmt.Errorf("refusing to send credentials to %s %s: insecure mode sends them only to the registry host", req.Method, host)
++	}
++	if req.URL.Scheme == "https" {
++		return nil
++	}
++	return fmt.Errorf("refusing to send credentials to %s %s over plain HTTP", req.Method, host)
++}
++
++// allowedGHCR lists the GHCR destinations and the exact paths and methods that
++// may carry credentials. Anything else, including other paths on the same hosts,
++// is refused.
++func (g *credentialGuard) allowedGHCR(req *http.Request) bool {
++	u := req.URL
++	if u.Scheme != "https" {
++		return false
++	}
++	path := u.EscapedPath()
++	switch strings.ToLower(u.Host) {
++	case g.ghcr.tokenHost:
++		if path == "/token" {
++			// Basic-auth GET or OAuth2 form POST.
++			return (req.Method == http.MethodGet && req.Header.Get("Authorization") != "") ||
++				(req.Method == http.MethodPost && isFormBody(req))
++		}
++		return strings.HasPrefix(path, "/v2/") && !isFormBody(req) && req.Header.Get("Authorization") != ""
++	case g.ghcr.apiHost:
++		if req.Method == http.MethodGet {
++			return ghcrPackageVersionsPath.MatchString(path)
++		}
++		if req.Method == http.MethodDelete {
++			return ghcrPackageVersionPath.MatchString(path)
++		}
++	}
++	return false
++}
++
++type requestLimiter interface {
++	Wait(context.Context) error
++}
++
++type rateLimitedRoundTripper struct {
++	limiter requestLimiter
++	inner   http.RoundTripper
++}
++
++func (rt *rateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
++	if rt.limiter != nil {
++		if err := rt.limiter.Wait(req.Context()); err != nil {
++			return nil, err
++		}
++	}
++	return rt.inner.RoundTrip(req)
++}
+diff --git a/internal/backend/remote-state/oras/transport_test.go b/internal/backend/remote-state/oras/transport_test.go
+new file mode 100644
+index 000000000..bb3c438f1
+--- /dev/null
++++ b/internal/backend/remote-state/oras/transport_test.go
+@@ -0,0 +1,133 @@
++package oras
++
++import (
++	"io"
++	"net/http"
++	"net/url"
++	"strings"
++	"testing"
++)
++
++type recordingRoundTripper struct{ called bool }
++
++func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
++	r.called = true
++	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
++}
++
++// newTestRequest builds a request with an optional Authorization header or form body.
++func newTestRequest(t *testing.T, method, target string, auth, form bool) *http.Request {
++	t.Helper()
++	var body io.Reader
++	if form {
++		body = strings.NewReader("grant_type=password&username=x&password=SECRET")
++	}
++	req, err := http.NewRequest(method, target, body)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if form {
++		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++	}
++	if auth {
++		req.Header.Set("Authorization", "Basic c2VjcmV0")
++	}
++	return req
++}
++
++func TestCredentialGuardMatrix(t *testing.T) {
++	ghcr := func() *credentialGuard {
++		return &credentialGuard{registry: "ghcr.io", ghcr: &ghcrEndpoints{tokenHost: "ghcr.io", apiHost: "api.github.com"}}
++	}
++	insecure := func(reg string) *credentialGuard { return &credentialGuard{registry: reg, insecure: true} }
++	secure := func() *credentialGuard { return &credentialGuard{registry: "registry.example.com"} }
++
++	tests := []struct {
++		name     string
++		guard    *credentialGuard
++		method   string
++		target   string
++		auth     bool
++		form     bool
++		wantSent bool
++	}{
++		{"GHCR basic GET token", ghcr(), "GET", "https://ghcr.io/token?service=ghcr.io", true, false, true},
++		{"GHCR OAuth2 form POST token", ghcr(), "POST", "https://ghcr.io/token", false, true, true},
++		{"GHCR registry request with bearer", ghcr(), "GET", "https://ghcr.io/v2/org/state/tags/list", true, false, true},
++		{"GHCR form POST to other path refused", ghcr(), "POST", "https://ghcr.io/evil-token", false, true, false},
++		{"GHCR basic GET to other path refused", ghcr(), "GET", "https://ghcr.io/evil-token", true, false, false},
++		{"GHCR form POST to attacker host refused", ghcr(), "POST", "https://evil.example/token", false, true, false},
++		{"GHCR basic to attacker host refused", ghcr(), "GET", "https://evil.example/token", true, false, false},
++		{"GHCR over plain HTTP refused", ghcr(), "GET", "http://ghcr.io/token", true, false, false},
++		{"GHCR anonymous request to other host allowed", ghcr(), "GET", "https://pkg-containers.example/blob", false, false, true},
++		{"GHCR package list via API", ghcr(), "GET", "https://api.github.com/orgs/o/packages/container/n/versions?per_page=100&page=1", true, false, true},
++		{"GHCR package version delete via API", ghcr(), "DELETE", "https://api.github.com/users/o/packages/container/n/versions/42", true, false, true},
++		{"GHCR package-name slash escaped", ghcr(), "GET", "https://api.github.com/orgs/o/packages/container/a%2Fb/versions", true, false, true},
++		{"GHCR API delete of the versions collection refused", ghcr(), "DELETE", "https://api.github.com/orgs/o/packages/container/n/versions", true, false, false},
++		{"GHCR API arbitrary repos path refused", ghcr(), "GET", "https://api.github.com/repos/o/n/actions/secrets", true, false, false},
++		{"GHCR API traversal refused", ghcr(), "DELETE", "https://api.github.com/orgs/o/packages/container/n/versions/42/../../../repos/o/n", true, false, false},
++		{"GHCR API POST refused", ghcr(), "POST", "https://api.github.com/orgs/o/packages/container/n/versions", true, false, false},
++		{"GHCR API form body refused", ghcr(), "POST", "https://api.github.com/orgs/o/packages/container/n/versions", false, true, false},
++		{"insecure basic to registry host", insecure("127.0.0.1:5000"), "GET", "http://127.0.0.1:5000/v2/", true, false, true},
++		{"insecure cross-host basic refused", insecure("127.0.0.1:5000"), "GET", "https://evil.example/token", true, false, false},
++		{"insecure cross-host form refused", insecure("127.0.0.1:5000"), "POST", "https://evil.example/token", false, true, false},
++		{"secure cross-host https form allowed (Docker-style realm)", secure(), "POST", "https://auth.example.net/token", false, true, true},
++		{"secure plain HTTP basic refused", secure(), "GET", "http://auth.example.net/token", true, false, false},
++		{"secure plain HTTP form refused", secure(), "POST", "http://auth.example.net/token", false, true, false},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			if _, err := url.Parse(tc.target); err != nil {
++				t.Fatal(err)
++			}
++			req := newTestRequest(t, tc.method, tc.target, tc.auth, tc.form)
++			inner := &recordingRoundTripper{}
++			tc.guard.inner = inner
++			resp, err := tc.guard.RoundTrip(req)
++			if tc.wantSent {
++				if err != nil || resp == nil || !inner.called {
++					t.Fatalf("request not sent: err=%v", err)
++				}
++				return
++			}
++			if err == nil || inner.called {
++				t.Fatalf("credentialed request was sent (err=%v)", err)
++			}
++		})
++	}
++}
++
++func TestCredentialGuardErrorDoesNotDiscloseCredential(t *testing.T) {
++	g := &credentialGuard{registry: "ghcr.io", ghcr: &ghcrEndpoints{tokenHost: "ghcr.io", apiHost: "api.github.com"}, inner: &recordingRoundTripper{}}
++	for _, form := range []bool{false, true} {
++		req := newTestRequest(t, "POST", "https://evil.example/token", !form, form)
++		_, err := g.RoundTrip(req)
++		if err == nil {
++			t.Fatal("expected refusal")
++		}
++		for _, leak := range []string{"c2VjcmV0", "SECRET", "grant_type", "password"} {
++			if strings.Contains(err.Error(), leak) {
++				t.Fatalf("error disclosed credential material %q: %v", leak, err)
++			}
++		}
++	}
++}
++
++func TestRejectInsecureGHCR(t *testing.T) {
++	tests := []struct {
++		registry string
++		insecure bool
++		wantErr  bool
++	}{
++		{"ghcr.io", true, true},
++		{"GHCR.IO", true, true},
++		{"ghcr.io", false, false},
++		{"127.0.0.1:5000", true, false},
++	}
++	for _, tc := range tests {
++		err := rejectInsecureGHCR(tc.registry, tc.insecure)
++		if (err != nil) != tc.wantErr {
++			t.Fatalf("rejectInsecureGHCR(%q, %v) = %v, wantErr %v", tc.registry, tc.insecure, err, tc.wantErr)
++		}
++	}
++}
+diff --git a/internal/command/arguments/history.go b/internal/command/arguments/history.go
+new file mode 100644
+index 000000000..dd1fbb5bc
+--- /dev/null
++++ b/internal/command/arguments/history.go
+@@ -0,0 +1,35 @@
++package arguments
++
++type HistoryList struct {
++	JSON bool
++}
++
++func BindHistoryList(cli *CommandLine) *HistoryList {
++	ret := &HistoryList{}
++	cli.BoolVar(&ret.JSON, "json", false, "Produce machine-readable JSON output.")
++	return ret
++}
++
++type HistoryShow struct {
++	JSON    bool
++	Version string
++}
++
++func BindHistoryShow(cli *CommandLine) *HistoryShow {
++	ret := &HistoryShow{}
++	cli.BoolVar(&ret.JSON, "json", false, "Produce machine-readable JSON output.")
++	cli.PositionalArg(&ret.Version, "version", false)
++	return ret
++}
++
++type HistoryPull struct {
++	Version string
++	Output  string
++}
++
++func BindHistoryPull(cli *CommandLine) *HistoryPull {
++	ret := &HistoryPull{}
++	cli.StringVar(&ret.Output, "output", "", "Write the historical state to this new file.").SetDisplay("=path")
++	cli.PositionalArg(&ret.Version, "version", false)
++	return ret
++}
+diff --git a/internal/command/arguments/history_test.go b/internal/command/arguments/history_test.go
+new file mode 100644
+index 000000000..31671fc02
+--- /dev/null
++++ b/internal/command/arguments/history_test.go
+@@ -0,0 +1,36 @@
++package arguments
++
++import "testing"
++
++func TestHistoryListJSONFlag(t *testing.T) {
++	var cli CommandLine
++	args := BindHistoryList(&cli)
++	if diags := cli.ParseLegacy([]string{"-json"}); diags.HasErrors() {
++		t.Fatalf("ParseLegacy(-json): %s", diags.Err())
++	}
++	if !args.JSON {
++		t.Fatal("-json did not enable JSON output")
++	}
++}
++
++func TestHistoryShowJSONFlag(t *testing.T) {
++	var cli CommandLine
++	args := BindHistoryShow(&cli)
++	if diags := cli.ParseLegacy([]string{"-json", "3"}); diags.HasErrors() {
++		t.Fatalf("ParseLegacy(-json 3): %s", diags.Err())
++	}
++	if !args.JSON || args.Version != "3" {
++		t.Fatalf("parsed show args = %#v", args)
++	}
++}
++
++func TestHistoryPullOutputFlag(t *testing.T) {
++	var cli CommandLine
++	args := BindHistoryPull(&cli)
++	if diags := cli.ParseLegacy([]string{"-output=state.tfstate", "2"}); diags.HasErrors() {
++		t.Fatalf("ParseLegacy pull: %s", diags.Err())
++	}
++	if args.Output != "state.tfstate" || args.Version != "2" {
++		t.Fatalf("parsed pull args = %#v", args)
++	}
++}
+diff --git a/internal/command/command.go b/internal/command/command.go
+index d6de239e2..769b370de 100644
+--- a/internal/command/command.go
++++ b/internal/command/command.go
+@@ -387,6 +387,7 @@ func RootCommander(help *bool, ver *bool, chdir *string) Command {
+ 			DestroyCommander(),
+ 
+ 			// Other Commands
++			HistoryCommander(),
+ 			ConsoleCommander(),
+ 			WorkspaceCommander(true),
+ 			FmtCommander(nil),
+diff --git a/internal/command/history.go b/internal/command/history.go
+new file mode 100644
+index 000000000..bb99faeb6
+--- /dev/null
++++ b/internal/command/history.go
+@@ -0,0 +1,280 @@
++package command
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"os"
++	"strconv"
++	"strings"
++	"time"
++
++	"github.com/mitchellh/cli"
++	"github.com/opentofu/opentofu/internal/command/arguments"
++	"github.com/opentofu/opentofu/internal/states/statemgr"
++)
++
++func HistoryCommander() Command {
++	return Command{
++		Name:     "history",
++		Short:    "Inspect retained ORAS state history",
++		Long:     "Inspect retained state versions when the active backend exposes the optional read-only history capability.",
++		Commands: []Command{HistoryListCommander(), HistoryShowCommander(), HistoryPullCommander()},
++	}
++}
++type HistoryCommand struct{}
++
++func (c *HistoryCommand) Run(_ []string) int { return cli.RunResultHelp }
++func (c *HistoryCommand) Synopsis() string   { return "Inspect retained ORAS state history" }
++func (c *HistoryCommand) Help() string {
++	return strings.TrimSpace(`
++Usage: tofu [global options] history <subcommand> [options]
++
++  Inspect retained state versions when the active backend exposes the optional
++  read-only history capability.
++
++Subcommands:
++  list    List retained versions
++  show    Show one retained state version
++  pull    Write one retained state version to a file
++`)
++}
++
++func normalizeHistoryArgs(args []string) []string {
++	normalized := append([]string(nil), args...)
++	for i, arg := range normalized {
++		if arg == "--" {
++			break
++		}
++		if strings.HasPrefix(arg, "--") {
++			normalized[i] = "-" + strings.TrimPrefix(arg, "--")
++		}
++	}
++	return normalized
++}
++
++func HistoryListCommander() Command {
++	cmd := Command{Name: "list", Short: "List retained state versions", Long: "List retained versions for the current workspace."}
++	args := arguments.BindHistoryList(&cmd.CommandLine)
++	cmd.Run = func(meta Meta) int { return HistoryListCommand{Meta: meta}.Execute(args) }
++	return cmd
++}
++
++type HistoryListCommand struct{ Meta }
++
++func (c *HistoryListCommand) Synopsis() string { return "List retained state versions" }
++func (c *HistoryListCommand) Help() string {
++	return strings.TrimSpace(`
++Usage: tofu [global options] history list [-json]
++
++  List retained versions for the current workspace. State contents are never
++  printed by this command.
++`)
++}
++func (c *HistoryListCommand) Run(rawArgs []string) int {
++	return RunCommand(HistoryListCommander(), c.Meta, normalizeHistoryArgs(rawArgs))
++}
++func (c HistoryListCommand) Execute(args *arguments.HistoryList) int {
++	ctx, history, err := loadStateHistory(c.Meta)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	versions, err := history.ListVersions(ctx)
++	if err != nil {
++		return historyCommandError(err)
++	}
++
++	if args.JSON {
++		enc := json.NewEncoder(os.Stdout)
++		enc.SetIndent("", "  ")
++		if err := enc.Encode(versions); err != nil {
++			return historyCommandError(err)
++		}
++		return 0
++	}
++
++	fmt.Fprintln(os.Stdout, "VERSION\tUPDATED\tDIGEST")
++	for _, version := range versions {
++		updated := "-"
++		if !version.UpdatedAt.IsZero() {
++			updated = version.UpdatedAt.UTC().Format(time.RFC3339)
++		}
++		fmt.Fprintf(os.Stdout, "%d\t%s\t%s\n", version.Version, updated, version.Digest)
++	}
++	return 0
++}
++
++func HistoryShowCommander() Command {
++	cmd := Command{Name: "show", Short: "Show a retained state version", Long: "Show one retained version for the current workspace."}
++	args := arguments.BindHistoryShow(&cmd.CommandLine)
++	cmd.Run = func(meta Meta) int { return HistoryShowCommand{Meta: meta}.Execute(args) }
++	return cmd
++}
++
++type HistoryShowCommand struct{ Meta }
++
++func (c *HistoryShowCommand) Synopsis() string { return "Show a retained state version" }
++func (c *HistoryShowCommand) Help() string {
++	return strings.TrimSpace(`
++Usage: tofu [global options] history show [-json] <version>
++
++  Show one retained version for the current workspace. -json writes the
++  historical state JSON without the human-readable metadata header.
++`)
++}
++func (c *HistoryShowCommand) Run(rawArgs []string) int {
++	return RunCommand(HistoryShowCommander(), c.Meta, normalizeHistoryArgs(rawArgs))
++}
++func (c HistoryShowCommand) Execute(args *arguments.HistoryShow) int {
++	version, err := parseHistoryVersion(args.Version)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	ctx, history, err := loadStateHistory(c.Meta)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	data, err := history.GetVersion(ctx, version)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	if !json.Valid(data) {
++		return historyCommandError(fmt.Errorf("historical state version %d is not valid JSON", version))
++	}
++
++	if args.JSON {
++		_, _ = os.Stdout.Write(data)
++		if len(data) == 0 || data[len(data)-1] != '\n' {
++			fmt.Fprintln(os.Stdout)
++		}
++		return 0
++	}
++
++	versions, err := history.ListVersions(ctx)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	var metadata *statemgr.StateVersion
++	for i := range versions {
++		if versions[i].Version == version {
++			metadata = &versions[i]
++			break
++		}
++	}
++
++	updated, digest := "-", "-"
++	if metadata != nil {
++		digest = metadata.Digest
++		if !metadata.UpdatedAt.IsZero() {
++			updated = metadata.UpdatedAt.UTC().Format(time.RFC3339)
++		}
++	}
++
++	var pretty bytes.Buffer
++	if err := json.Indent(&pretty, data, "", "  "); err != nil {
++		return historyCommandError(err)
++	}
++	fmt.Fprintf(os.Stdout, "Version: %d\nUpdated: %s\nDigest: %s\n\n%s\n", version, updated, digest, pretty.String())
++	return 0
++}
++
++func HistoryPullCommander() Command {
++	cmd := Command{Name: "pull", Short: "Write a retained state version to a file", Long: "Write one retained state version to a new file."}
++	args := arguments.BindHistoryPull(&cmd.CommandLine)
++	cmd.Run = func(meta Meta) int { return HistoryPullCommand{Meta: meta}.Execute(args) }
++	return cmd
++}
++
++type HistoryPullCommand struct{ Meta }
++
++func (c *HistoryPullCommand) Synopsis() string { return "Write a retained state version to a file" }
++func (c *HistoryPullCommand) Help() string {
++	return strings.TrimSpace(`
++Usage: tofu [global options] history pull -output=<file> <version>
++
++  Write one retained state version to a new file. Existing files are not
++  overwritten.
++`)
++}
++func (c *HistoryPullCommand) Run(rawArgs []string) int {
++	return RunCommand(HistoryPullCommander(), c.Meta, normalizeHistoryArgs(rawArgs))
++}
++func (c HistoryPullCommand) Execute(args *arguments.HistoryPull) int {
++	if strings.TrimSpace(args.Output) == "" {
++		return historyCommandError(fmt.Errorf("history pull requires -output=<file>"))
++	}
++	version, err := parseHistoryVersion(args.Version)
++	if err != nil {
++		return historyCommandError(err)
++	}
++
++	ctx, history, err := loadStateHistory(c.Meta)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	data, err := history.GetVersion(ctx, version)
++	if err != nil {
++		return historyCommandError(err)
++	}
++
++	f, err := os.OpenFile(args.Output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
++	if err != nil {
++		return historyCommandError(err)
++	}
++	if _, err := f.Write(data); err != nil {
++		_ = f.Close()
++		_ = os.Remove(args.Output)
++		return historyCommandError(err)
++	}
++	if err := f.Close(); err != nil {
++		_ = os.Remove(args.Output)
++		return historyCommandError(err)
++	}
++	fmt.Fprintf(os.Stdout, "Wrote state version %d to %s\n", version, args.Output)
++	return 0
++}
++
++func loadStateHistory(meta Meta) (context.Context, statemgr.History, error) {
++	ctx := meta.CommandContext()
++	if diags := meta.checkRequiredVersion(ctx); diags.HasErrors() {
++		return nil, nil, diags.Err()
++	}
++
++	enc, diags := meta.Encryption(ctx)
++	if diags.HasErrors() {
++		return nil, nil, diags.Err()
++	}
++	b, diags := meta.Backend(ctx, nil, enc.State())
++	if diags.HasErrors() {
++		return nil, nil, diags.Err()
++	}
++	meta.ignoreRemoteVersionConflict(b)
++
++	workspace, err := meta.Workspace(ctx)
++	if err != nil {
++		return nil, nil, fmt.Errorf("selecting workspace: %w", err)
++	}
++	stateMgr, err := b.StateMgr(ctx, workspace)
++	if err != nil {
++		return nil, nil, fmt.Errorf("loading state manager: %w", err)
++	}
++	history, ok := stateMgr.(statemgr.History)
++	if !ok {
++		return nil, nil, fmt.Errorf("the active backend does not support read-only state history")
++	}
++	return ctx, history, nil
++}
++
++func parseHistoryVersion(raw string) (int, error) {
++	version, err := strconv.Atoi(raw)
++	if err != nil || version <= 0 {
++		return 0, fmt.Errorf("invalid state version %q", raw)
++	}
++	return version, nil
++}
++
++func historyCommandError(err error) int {
++	fmt.Fprintf(os.Stderr, "Error: %s\n", err)
++	return 1
++}
+diff --git a/internal/command/init.go b/internal/command/init.go
+index 0d98d551a..5a3549cb6 100644
+--- a/internal/command/init.go
++++ b/internal/command/init.go
+@@ -21,6 +21,7 @@ import (
+ 	"github.com/opentofu/opentofu/internal/addrs"
+ 	"github.com/opentofu/opentofu/internal/backend"
+ 	backendInit "github.com/opentofu/opentofu/internal/backend/init"
++	backendORAS "github.com/opentofu/opentofu/internal/backend/remote-state/oras"
+ 	"github.com/opentofu/opentofu/internal/cloud"
+ 	"github.com/opentofu/opentofu/internal/command/arguments"
+ 	"github.com/opentofu/opentofu/internal/command/flags"
+@@ -515,6 +516,12 @@ func (c *InitCommand) initBackend(ctx context.Context, root *configs.Module, ext
+ 		if overrideDiags.HasErrors() {
+ 			return nil, true, diags
+ 		}
++		if canonType == "oras" {
++			diags = diags.Append(backendORAS.CheckLiteralRepository(root.Backend.Config, backendConfigOverride))
++			if diags.HasErrors() {
++				return nil, true, diags
++			}
++		}
+ 	} else {
+ 		// If the user supplied a -backend-config on the CLI but no backend
+ 		// block was found in the configuration, it's likely - but not
+diff --git a/internal/command/init_oras_test.go b/internal/command/init_oras_test.go
+new file mode 100644
+index 000000000..8f931c463
+--- /dev/null
++++ b/internal/command/init_oras_test.go
+@@ -0,0 +1,141 @@
++package command
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/opentofu/opentofu/internal/command/workdir"
++)
++
++// The ORAS repository must come from the literal backend block, end to end
++// through `init`; the schema alone does not prove it.
++func runOrasInit(t *testing.T, fixture string, env map[string]string, args ...string) (int, string) {
++	t.Helper()
++	td := t.TempDir()
++	testCopyDir(t, testFixturePath(fixture), td)
++	t.Chdir(td)
++	for k, v := range env {
++		t.Setenv(k, v)
++	}
++	view, done := testView(t)
++	meta := Meta{
++		WorkingDir:       workdir.NewDir("."),
++		testingOverrides: metaOverridesForProvider(testProvider()),
++		View:             view,
++	}
++	code := RunCommander(t, InitCommander(), meta, args)
++	out := done(t)
++	return code, out.Stderr()
++}
++
++func TestInitOras_RepositoryNotSatisfiedByEnv(t *testing.T) {
++	code, stderr := runOrasInit(t, "init-oras-no-repository",
++		map[string]string{"TF_BACKEND_ORAS_REPOSITORY": "127.0.0.1:1/ns/from-env"},
++		"-input=false")
++	if code == 0 {
++		t.Fatal("init succeeded with repository supplied only by environment")
++	}
++	if !strings.Contains(stderr, "requires repository to be set literally") {
++		t.Fatalf("unexpected diagnostics: %s", stderr)
++	}
++}
++
++func TestInitOras_BackendConfigCannotSetRepository(t *testing.T) {
++	code, stderr := runOrasInit(t, "init-oras-literal", nil,
++		"-input=false", "-backend-config=repository=127.0.0.1:2/ns/other")
++	if code == 0 {
++		t.Fatal("init accepted -backend-config repository override")
++	}
++	if !strings.Contains(stderr, "-backend-config cannot set repository") {
++		t.Fatalf("unexpected diagnostics: %s", stderr)
++	}
++}
++
++// Dynamic and null forms can be satisfied from the environment, variables,
++// locals, or functions; each must be rejected from the literal backend block.
++func TestInitOras_RepositoryMustBeLiteral(t *testing.T) {
++	tests := []struct {
++		name    string
++		fixture string
++		env     map[string]string
++	}{
++		{"variable from TF_VAR", "init-oras-var", map[string]string{"TF_VAR_repo": "127.0.0.1:1/ns/from-tf-var"}},
++		{"function call", "init-oras-function", nil},
++		{"null", "init-oras-null", nil},
++		{"local", "init-oras-local", nil},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			code, stderr := runOrasInit(t, tc.fixture, tc.env, "-input=false")
++			if code == 0 {
++				t.Fatal("init accepted a non-literal repository")
++			}
++			if !strings.Contains(stderr, "repository must be a literal string") {
++				t.Fatalf("unexpected diagnostics: %s", stderr)
++			}
++		})
++	}
++}
++
++// .tf.json backend blocks: a JSON string is evaluated as a template when OpenTofu
++// has a context, so an interpolated repository must be rejected as well.
++func TestInitOras_JSONRepositoryMustBeLiteral(t *testing.T) {
++	tests := []struct {
++		name    string
++		fixture string
++		env     map[string]string
++	}{
++		{"file() interpolation", "init-oras-json-file", nil},
++		{"variable interpolation from TF_VAR", "init-oras-json-var", map[string]string{"TF_VAR_repo": "127.0.0.1:1/ns/from-tf-var"}},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			code, stderr := runOrasInit(t, tc.fixture, tc.env, "-input=false")
++			if code == 0 {
++				t.Fatal("init accepted an interpolated JSON repository")
++			}
++			if !strings.Contains(stderr, "repository must be a literal string") {
++				t.Fatalf("unexpected diagnostics: %s", stderr)
++			}
++		})
++	}
++}
++
++func TestInitOras_JSONLiteralPassesCheck(t *testing.T) {
++	// The plain JSON literal passes the repository check; any remaining failure is
++	// the connection to the closed port, not the literal rule.
++	_, stderr := runOrasInit(t, "init-oras-json-literal", nil, "-input=false")
++	if strings.Contains(stderr, "requires repository") || strings.Contains(stderr, "must be a literal string") || strings.Contains(stderr, "cannot set repository") {
++		t.Fatalf("plain JSON literal repository rejected: %s", stderr)
++	}
++}
++
++func TestInitOras_BackendConfigFileCannotSetRepository(t *testing.T) {
++	code, stderr := runOrasInit(t, "init-oras-literal", nil,
++		"-input=false", "-backend-config=override.hcl")
++	if code == 0 {
++		t.Fatal("init accepted repository from a -backend-config file")
++	}
++	if !strings.Contains(stderr, "-backend-config cannot set repository") {
++		t.Fatalf("unexpected diagnostics: %s", stderr)
++	}
++}
++
++func TestInitOras_LiteralRepositoryPassesCheck(t *testing.T) {
++	// The literal backend passes the repository check; any remaining failure is
++	// the connection attempt to the closed port, not the repository rule.
++	_, stderr := runOrasInit(t, "init-oras-literal", nil, "-input=false")
++	if strings.Contains(stderr, "requires repository") || strings.Contains(stderr, "cannot set repository") {
++		t.Fatalf("literal repository rejected: %s", stderr)
++	}
++}
++
++func TestInitOras_GHCRRejectsInsecure(t *testing.T) {
++	code, stderr := runOrasInit(t, "init-oras-ghcr-insecure", nil, "-input=false")
++	if code == 0 {
++		t.Fatal("init accepted insecure=true for ghcr.io")
++	}
++	if !strings.Contains(stderr, "insecure must be false for ghcr.io") {
++		t.Fatalf("unexpected diagnostics: %s", stderr)
++	}
++}
+diff --git a/internal/command/testdata/init-oras-function/main.tf b/internal/command/testdata/init-oras-function/main.tf
+new file mode 100644
+index 000000000..5d6cb384a
+--- /dev/null
++++ b/internal/command/testdata/init-oras-function/main.tf
+@@ -0,0 +1,7 @@
++terraform {
++  backend "oras" {
++    repository = format("%s/%s", "127.0.0.1:1", "ns/state")
++    insecure   = true
++    retry_max  = 0
++  }
++}
+diff --git a/internal/command/testdata/init-oras-ghcr-insecure/main.tf b/internal/command/testdata/init-oras-ghcr-insecure/main.tf
+new file mode 100644
+index 000000000..4d90cb903
+--- /dev/null
++++ b/internal/command/testdata/init-oras-ghcr-insecure/main.tf
+@@ -0,0 +1,6 @@
++terraform {
++  backend "oras" {
++    repository = "ghcr.io/org/state"
++    insecure   = true
++  }
++}
+diff --git a/internal/command/testdata/init-oras-json-file/main.tf.json b/internal/command/testdata/init-oras-json-file/main.tf.json
+new file mode 100644
+index 000000000..196488e50
+--- /dev/null
++++ b/internal/command/testdata/init-oras-json-file/main.tf.json
+@@ -0,0 +1,11 @@
++{
++  "terraform": {
++    "backend": {
++      "oras": {
++        "repository": "${file(\"repo.txt\")}",
++        "insecure": true,
++        "retry_max": 0
++      }
++    }
++  }
++}
+diff --git a/internal/command/testdata/init-oras-json-file/repo.txt b/internal/command/testdata/init-oras-json-file/repo.txt
+new file mode 100644
+index 000000000..541d87c6d
+--- /dev/null
++++ b/internal/command/testdata/init-oras-json-file/repo.txt
+@@ -0,0 +1 @@
++127.0.0.1:1/ns/from-file
+diff --git a/internal/command/testdata/init-oras-json-literal/main.tf.json b/internal/command/testdata/init-oras-json-literal/main.tf.json
+new file mode 100644
+index 000000000..eeb6a33d1
+--- /dev/null
++++ b/internal/command/testdata/init-oras-json-literal/main.tf.json
+@@ -0,0 +1,11 @@
++{
++  "terraform": {
++    "backend": {
++      "oras": {
++        "repository": "127.0.0.1:1/ns/state",
++        "insecure": true,
++        "retry_max": 0
++      }
++    }
++  }
++}
+diff --git a/internal/command/testdata/init-oras-json-var/main.tf.json b/internal/command/testdata/init-oras-json-var/main.tf.json
+new file mode 100644
+index 000000000..5264d2195
+--- /dev/null
++++ b/internal/command/testdata/init-oras-json-var/main.tf.json
+@@ -0,0 +1,16 @@
++{
++  "variable": {
++    "repo": {
++      "type": "string"
++    }
++  },
++  "terraform": {
++    "backend": {
++      "oras": {
++        "repository": "${var.repo}",
++        "insecure": true,
++        "retry_max": 0
++      }
++    }
++  }
++}
+diff --git a/internal/command/testdata/init-oras-literal/main.tf b/internal/command/testdata/init-oras-literal/main.tf
+new file mode 100644
+index 000000000..37e720f3c
+--- /dev/null
++++ b/internal/command/testdata/init-oras-literal/main.tf
+@@ -0,0 +1,7 @@
++terraform {
++  backend "oras" {
++    repository  = "127.0.0.1:1/ns/state"
++    insecure    = true
++    retry_max   = 0
++  }
++}
+diff --git a/internal/command/testdata/init-oras-literal/override.hcl b/internal/command/testdata/init-oras-literal/override.hcl
+new file mode 100644
+index 000000000..b29bf2087
+--- /dev/null
++++ b/internal/command/testdata/init-oras-literal/override.hcl
+@@ -0,0 +1 @@
++repository = "127.0.0.1:2/ns/file"
+diff --git a/internal/command/testdata/init-oras-local/main.tf b/internal/command/testdata/init-oras-local/main.tf
+new file mode 100644
+index 000000000..c0e537b8f
+--- /dev/null
++++ b/internal/command/testdata/init-oras-local/main.tf
+@@ -0,0 +1,11 @@
++locals {
++  repo = "127.0.0.1:1/ns/state"
++}
++
++terraform {
++  backend "oras" {
++    repository = local.repo
++    insecure   = true
++    retry_max  = 0
++  }
++}
+diff --git a/internal/command/testdata/init-oras-no-repository/main.tf b/internal/command/testdata/init-oras-no-repository/main.tf
+new file mode 100644
+index 000000000..8b622b224
+--- /dev/null
++++ b/internal/command/testdata/init-oras-no-repository/main.tf
+@@ -0,0 +1,3 @@
++terraform {
++  backend "oras" {}
++}
+diff --git a/internal/command/testdata/init-oras-null/main.tf b/internal/command/testdata/init-oras-null/main.tf
+new file mode 100644
+index 000000000..fa301e1cb
+--- /dev/null
++++ b/internal/command/testdata/init-oras-null/main.tf
+@@ -0,0 +1,7 @@
++terraform {
++  backend "oras" {
++    repository = null
++    insecure   = true
++    retry_max  = 0
++  }
++}
+diff --git a/internal/command/testdata/init-oras-var/main.tf b/internal/command/testdata/init-oras-var/main.tf
+new file mode 100644
+index 000000000..5482016eb
+--- /dev/null
++++ b/internal/command/testdata/init-oras-var/main.tf
+@@ -0,0 +1,11 @@
++variable "repo" {
++  type = string
++}
++
++terraform {
++  backend "oras" {
++    repository = var.repo
++    insecure   = true
++    retry_max  = 0
++  }
++}
+diff --git a/internal/states/statemgr/history.go b/internal/states/statemgr/history.go
+new file mode 100644
+index 000000000..1d88f9a05
+--- /dev/null
++++ b/internal/states/statemgr/history.go
+@@ -0,0 +1,21 @@
++package statemgr
++
++import (
++	"context"
++	"time"
++)
++
++// StateVersion describes one retained historical state snapshot without
++// exposing backend-specific storage identifiers.
++type StateVersion struct {
++	Version   int       `json:"version"`
++	UpdatedAt time.Time `json:"updated_at,omitempty"`
++	Digest    string    `json:"digest,omitempty"`
++}
++
++// History is an optional read-only capability implemented by state managers
++// that can expose retained historical snapshots.
++type History interface {
++	ListVersions(context.Context) ([]StateVersion, error)
++	GetVersion(context.Context, int) ([]byte, error)
++}

@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GH_TOFU_BIN="${GH_TOFU_BIN:-$ROOT/dist/gh-tofu}"
+ZOT_IMAGE="${ZOT_IMAGE:-ghcr.io/project-zot/zot:v2.1.21}"
+
+if [[ ! -x "$GH_TOFU_BIN" ]]; then
+  echo "ERROR: gh-tofu binary not found or not executable: $GH_TOFU_BIN" >&2
+  exit 1
+fi
+
+for command in docker curl; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "ERROR: required command not found: $command" >&2
+    exit 1
+  fi
+done
+
+WORK="$(mktemp -d)"
+WRITER="$WORK/writer"
+READER="$WORK/reader"
+LOCK_MARKER="$WORK/lock-held"
+HOLDER_LOG="$WORK/holder.log"
+CONTAINER="gh-tofu-zot-$RANDOM-$$"
+HOLDER_PID=""
+
+cleanup() {
+  if [[ -n "$HOLDER_PID" ]] && kill -0 "$HOLDER_PID" >/dev/null 2>&1; then
+    kill "$HOLDER_PID" >/dev/null 2>&1 || true
+    wait "$HOLDER_PID" >/dev/null 2>&1 || true
+  fi
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+mkdir -p "$WRITER" "$READER"
+
+echo "Starting disposable Zot registry ($ZOT_IMAGE)"
+docker run --detach --rm \
+  --name "$CONTAINER" \
+  --publish 127.0.0.1::5000 \
+  "$ZOT_IMAGE" >/dev/null
+
+PORT=""
+for _ in {1..30}; do
+  PORT="$(docker port "$CONTAINER" 5000/tcp 2>/dev/null | sed -n 's/.*://p' | head -n1)"
+  if [[ -n "$PORT" ]] && curl --fail --silent "http://127.0.0.1:$PORT/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if [[ -z "$PORT" ]] || ! curl --fail --silent "http://127.0.0.1:$PORT/v2/" >/dev/null 2>&1; then
+  echo "ERROR: Zot did not become ready." >&2
+  docker logs "$CONTAINER" >&2 || true
+  exit 1
+fi
+
+cat > "$WRITER/main.tf" <<'HCL'
+terraform {
+  backend "oras" {
+    repository  = "127.0.0.1:__PORT__/gh-tofu-e2e"
+    insecure    = true
+    max_versions = 5
+  }
+}
+
+variable "value" {
+  type = string
+}
+
+resource "terraform_data" "value" {
+  input            = var.value
+  triggers_replace = [var.value]
+
+  provisioner "local-exec" {
+    command = "if [ -n \"$GH_TOFU_E2E_LOCK_MARKER\" ]; then touch \"$GH_TOFU_E2E_LOCK_MARKER\"; sleep \"$GH_TOFU_E2E_LOCK_SLEEP\"; fi"
+  }
+}
+
+output "value" {
+  value = terraform_data.value.output
+}
+HCL
+
+sed -i "s/__PORT__/$PORT/g" "$WRITER/main.tf"
+cp "$WRITER/main.tf" "$READER/main.tf"
+
+export TF_IN_AUTOMATION=1
+export CHECKPOINT_DISABLE=1
+export GH_TOFU_E2E_LOCK_MARKER=""
+export GH_TOFU_E2E_LOCK_SLEEP="0"
+
+echo "Initializing writer through the ORAS backend"
+"$GH_TOFU_BIN" -chdir="$WRITER" init -input=false -no-color
+
+echo "Applying initial synthetic state"
+"$GH_TOFU_BIN" -chdir="$WRITER" apply \
+  -auto-approve -input=false -no-color -var='value=one'
+
+echo "Initializing an independent reader directory"
+"$GH_TOFU_BIN" -chdir="$READER" init -input=false -no-color
+
+echo "Checking a fresh-process no-change plan"
+set +e
+PLAN_OUTPUT="$("$GH_TOFU_BIN" -chdir="$READER" plan \
+  -detailed-exitcode -input=false -no-color -var='value=one' 2>&1)"
+PLAN_STATUS=$?
+set -e
+if [[ "$PLAN_STATUS" -ne 0 ]]; then
+  echo "ERROR: expected no-change plan (exit 0), got exit $PLAN_STATUS." >&2
+  printf '%s\n' "$PLAN_OUTPUT" >&2
+  exit 1
+fi
+
+FIRST_VALUE="$("$GH_TOFU_BIN" -chdir="$READER" output -raw value)"
+if [[ "$FIRST_VALUE" != "one" ]]; then
+  echo "ERROR: fresh reader returned unexpected initial output." >&2
+  exit 1
+fi
+
+echo "Persisting an updated state"
+"$GH_TOFU_BIN" -chdir="$WRITER" apply \
+  -auto-approve -input=false -no-color -var='value=two'
+
+SECOND_VALUE="$("$GH_TOFU_BIN" -chdir="$READER" output -raw value)"
+if [[ "$SECOND_VALUE" != "two" ]]; then
+  echo "ERROR: fresh reader did not observe the updated state." >&2
+  exit 1
+fi
+
+echo "Verifying read-only ORAS state history"
+HISTORY_LIST="$("$GH_TOFU_BIN" -chdir="$READER" history list --json)"
+HISTORY_LIST="$HISTORY_LIST" python3 - <<'PY'
+import json
+import os
+
+versions = json.loads(os.environ["HISTORY_LIST"])
+numbers = [item["version"] for item in versions]
+if numbers[:2] != [1, 2]:
+    raise SystemExit(f"unexpected history versions: {numbers}")
+if "one" in os.environ["HISTORY_LIST"] or "two" in os.environ["HISTORY_LIST"]:
+    raise SystemExit("history list leaked state contents")
+PY
+
+HISTORY_SHOW="$("$GH_TOFU_BIN" -chdir="$READER" history show --json 1)"
+HISTORY_SHOW="$HISTORY_SHOW" python3 - <<'PY'
+import json
+import os
+
+state = json.loads(os.environ["HISTORY_SHOW"])
+encoded = json.dumps(state)
+if "one" not in encoded:
+    raise SystemExit("history show did not return version 1 state")
+PY
+
+HISTORY_FILE="$WORK/history-v1.tfstate"
+"$GH_TOFU_BIN" -chdir="$READER" history pull --output "$HISTORY_FILE" 1
+HISTORY_FILE="$HISTORY_FILE" python3 - <<'PY'
+import json
+import os
+
+with open(os.environ["HISTORY_FILE"], encoding="utf-8") as f:
+    state = json.load(f)
+if "one" not in json.dumps(state):
+    raise SystemExit("history pull did not write version 1 state")
+PY
+
+HISTORY_MODE="$(stat -c '%a' "$HISTORY_FILE")"
+if [[ "$HISTORY_MODE" != "600" ]]; then
+  echo "ERROR: history pull created $HISTORY_FILE with mode $HISTORY_MODE, expected 600." >&2
+  exit 1
+fi
+
+printf 'do-not-overwrite' > "$HISTORY_FILE"
+set +e
+OVERWRITE_OUTPUT="$("$GH_TOFU_BIN" -chdir="$READER" history pull --output "$HISTORY_FILE" 1 2>&1)"
+OVERWRITE_STATUS=$?
+set -e
+if [[ "$OVERWRITE_STATUS" -eq 0 ]]; then
+  echo "ERROR: history pull overwrote an existing file." >&2
+  exit 1
+fi
+if [[ "$(cat "$HISTORY_FILE")" != "do-not-overwrite" ]]; then
+  echo "ERROR: failed history pull modified the existing output file." >&2
+  printf '%s\n' "$OVERWRITE_OUTPUT" >&2
+  exit 1
+fi
+
+LOCAL="$WORK/local"
+mkdir -p "$LOCAL"
+cat > "$LOCAL/main.tf" <<'HCL'
+terraform {}
+HCL
+"$GH_TOFU_BIN" -chdir="$LOCAL" init -input=false -no-color >/dev/null
+set +e
+UNSUPPORTED_OUTPUT="$("$GH_TOFU_BIN" -chdir="$LOCAL" history list 2>&1)"
+UNSUPPORTED_STATUS=$?
+set -e
+if [[ "$UNSUPPORTED_STATUS" -eq 0 ]] || ! grep -qi "does not support read-only state history" <<<"$UNSUPPORTED_OUTPUT"; then
+  echo "ERROR: unsupported backend did not return the expected history capability error." >&2
+  printf '%s\n' "$UNSUPPORTED_OUTPUT" >&2
+  exit 1
+fi
+
+echo "Exercising state lock contention"
+GH_TOFU_E2E_LOCK_MARKER="$LOCK_MARKER" \
+GH_TOFU_E2E_LOCK_SLEEP="15" \
+  "$GH_TOFU_BIN" -chdir="$WRITER" apply \
+    -auto-approve -input=false -no-color -var='value=locked' \
+    >"$HOLDER_LOG" 2>&1 &
+HOLDER_PID=$!
+
+for _ in {1..60}; do
+  if [[ -f "$LOCK_MARKER" ]]; then
+    break
+  fi
+  if ! kill -0 "$HOLDER_PID" >/dev/null 2>&1; then
+    echo "ERROR: lock-holder apply exited before reaching the hold point." >&2
+    tail -n 80 "$HOLDER_LOG" >&2 || true
+    exit 1
+  fi
+  sleep 0.5
+done
+
+if [[ ! -f "$LOCK_MARKER" ]]; then
+  echo "ERROR: timed out waiting for lock-holder apply." >&2
+  tail -n 80 "$HOLDER_LOG" >&2 || true
+  exit 1
+fi
+
+set +e
+LOCK_OUTPUT="$("$GH_TOFU_BIN" -chdir="$READER" plan \
+  -lock-timeout=0s -input=false -no-color -var='value=locked' 2>&1)"
+LOCK_STATUS=$?
+set -e
+
+if [[ "$LOCK_STATUS" -eq 0 ]]; then
+  echo "ERROR: competing process unexpectedly acquired the state lock." >&2
+  exit 1
+fi
+if ! grep -qi "lock" <<<"$LOCK_OUTPUT"; then
+  echo "ERROR: competing process failed, but not with a recognizable lock diagnostic." >&2
+  printf '%s\n' "$LOCK_OUTPUT" >&2
+  exit 1
+fi
+
+wait "$HOLDER_PID"
+HOLDER_PID=""
+
+FINAL_VALUE="$("$GH_TOFU_BIN" -chdir="$READER" output -raw value)"
+if [[ "$FINAL_VALUE" != "locked" ]]; then
+  echo "ERROR: fresh reader did not observe state written after lock contention." >&2
+  exit 1
+fi
+
+echo "Exercising refusal to persist state after the lock lease expired"
+TTL_DIR="$WORK/ttl"
+mkdir -p "$TTL_DIR"
+cat > "$TTL_DIR/main.tf" <<'HCL'
+terraform {
+  backend "oras" {
+    repository = "127.0.0.1:__PORT__/gh-tofu-e2e-ttl"
+    insecure   = true
+  }
+}
+
+variable "value" {
+  type = string
+}
+
+resource "terraform_data" "value" {
+  input            = var.value
+  triggers_replace = [var.value]
+
+  provisioner "local-exec" {
+    command = "sleep 3"
+  }
+}
+HCL
+sed -i "s/__PORT__/$PORT/g" "$TTL_DIR/main.tf"
+
+export TF_BACKEND_ORAS_LOCK_TTL="1"
+"$GH_TOFU_BIN" -chdir="$TTL_DIR" init -input=false -no-color >/dev/null
+set +e
+TTL_OUTPUT="$("$GH_TOFU_BIN" -chdir="$TTL_DIR" apply \
+  -auto-approve -input=false -no-color -var='value=ttl' 2>&1)"
+TTL_STATUS=$?
+set -e
+unset TF_BACKEND_ORAS_LOCK_TTL
+
+if [[ "$TTL_STATUS" -eq 0 ]]; then
+  echo "ERROR: apply persisted state after its lock lease expired." >&2
+  exit 1
+fi
+if ! grep -q "refusing to write state" <<<"$TTL_OUTPUT"; then
+  echo "ERROR: expired-lease apply did not fail with the adapter's refusal diagnostic." >&2
+  printf '%s\n' "$TTL_OUTPUT" >&2
+  exit 1
+fi
+# Diagnostics wrap at 80 columns, so match the token that cannot be split.
+if ! grep -q "lease_expiry" <<<"$TTL_OUTPUT"; then
+  echo "ERROR: refusal was not caused by the expired lock lease." >&2
+  printf '%s\n' "$TTL_OUTPUT" >&2
+  exit 1
+fi
+# Without this the apply could have failed before reaching the state write, and
+# the refusal above would never have been exercised.
+if ! grep -q "terraform_data" "$TTL_DIR/errored.tfstate"; then
+  echo "ERROR: no errored.tfstate holding the applied resource; the apply never reached the state write." >&2
+  exit 1
+fi
+TTL_STATE="$("$GH_TOFU_BIN" -chdir="$TTL_DIR" state pull)"
+TTL_STATE="$TTL_STATE" python3 - <<'PY'
+import json, os, sys
+state = json.loads(os.environ["TTL_STATE"])
+if state.get("resources"):
+    print("ERROR: expired-lease apply wrote state anyway: %r" % state["resources"], file=sys.stderr)
+    sys.exit(1)
+PY
+
+echo "ORAS backend E2E lifecycle passed."
