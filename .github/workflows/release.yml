@@ -20,6 +20,11 @@ on:
         required: false
         default: "rc.1"
         type: string
+      allow_older_upstream_pin:
+        description: "Allow an explicit pin older than OpenTofu's latest stable (never newer)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -51,6 +56,7 @@ jobs:
         env:
           RELEASE_TYPE: ${{ inputs.release_type }}
           PRERELEASE_SUFFIX: ${{ inputs.prerelease_suffix }}
+          ALLOW_OLDER_UPSTREAM_PIN: ${{ inputs.allow_older_upstream_pin }}
         run: |
           source ./gh-tofu.env
 
@@ -81,8 +87,22 @@ jobs:
             exit 1
           fi
           if [[ "$GH_TOFU_VERSION" != "$LATEST_VERSION" ]]; then
-            echo "::error::gh-tofu can only release against OpenTofu's globally latest stable version: pinned=$GH_TOFU_VERSION, latest=$LATEST_VERSION."
-            exit 1
+            # A pin newer than upstream's latest stable is never allowed, even when opted in.
+            NEWEST="$(printf '%s\n%s\n' "$GH_TOFU_VERSION" "$LATEST_VERSION" | sort -V | tail -n1)"
+            if [[ "$NEWEST" != "$LATEST_VERSION" ]]; then
+              echo "::error::GH_TOFU_VERSION ($GH_TOFU_VERSION) is newer than OpenTofu's latest stable release ($LATEST_VERSION)."
+              exit 1
+            fi
+            if [[ "$ALLOW_OLDER_UPSTREAM_PIN" != true ]]; then
+              echo "::error::gh-tofu can only release against OpenTofu's globally latest stable version: pinned=$GH_TOFU_VERSION, latest=$LATEST_VERSION. Set allow_older_upstream_pin to release an explicit older pin."
+              exit 1
+            fi
+            echo "::warning::Older upstream pin exception: releasing gh-tofu $GH_TOFU_VERSION while OpenTofu's latest stable is $LATEST_VERSION (allow_older_upstream_pin=true)."
+            {
+              echo "### Older upstream pin exception"
+              echo "- Releasing gh-tofu \`$GH_TOFU_VERSION\` against OpenTofu \`$OPENTOFU_REF\`."
+              echo "- OpenTofu's latest stable release is \`$LATEST_VERSION\`; \`allow_older_upstream_pin\` was explicitly set."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
           UPSTREAM_COMMIT="$(

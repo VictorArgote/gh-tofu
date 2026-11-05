@@ -23,6 +23,9 @@ jobs:
       - name: Verify release publication failure handling
         run: python3 scripts/test-publish-release.py
 
+      - name: Verify release pin policy
+        run: python3 scripts/test-release-pin.py
+
       - name: Verify installer and release asset contract
         run: python3 scripts/test-install.py
 
