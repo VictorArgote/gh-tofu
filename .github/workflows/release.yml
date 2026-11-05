@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
 
       - name: Validate pinned version and release type

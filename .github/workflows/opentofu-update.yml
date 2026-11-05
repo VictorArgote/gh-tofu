@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
 
       - name: Find latest stable OpenTofu release
@@ -193,7 +193,7 @@ jobs:
           if ! PR_URL="$(
             gh pr create \
               --repo "$GITHUB_REPOSITORY" \
-              --base main \
+              --base master \
               --head "$BRANCH" \
               --title "build(deps): update OpenTofu to $VERSION" \
               --body-file /tmp/pr-body.md

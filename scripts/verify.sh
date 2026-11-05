@@ -39,10 +39,19 @@ fi
     ./internal/backend/remote-state/oras \
     ./internal/backend/init
 
-  CGO_ENABLED=0 GOWORK=off go build -trimpath -o "$WORK/gh-tofu" ./cmd/tofu
+  CGO_ENABLED=0 GOWORK=off go build -trimpath \
+    -ldflags "-X github.com/opentofu/opentofu/version.dev=no" \
+    -o "$WORK/gh-tofu" ./cmd/tofu
+  version_line="$("$WORK/gh-tofu" version | sed -n '1p')"
+  if [[ "$version_line" != "OpenTofu v$GH_TOFU_VERSION" ]]; then
+    echo "ERROR: release binary reports '$version_line', expected OpenTofu v$GH_TOFU_VERSION" >&2
+    exit 1
+  fi
   if [[ -n "${GH_TOFU_VERIFY_ARM64_OUTPUT:-}" ]]; then
     mkdir -p "$(dirname "$GH_TOFU_VERIFY_ARM64_OUTPUT")"
-    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOWORK=off go build -trimpath -o "$GH_TOFU_VERIFY_ARM64_OUTPUT" ./cmd/tofu
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOWORK=off go build -trimpath \
+      -ldflags "-X github.com/opentofu/opentofu/version.dev=no" \
+      -o "$GH_TOFU_VERIFY_ARM64_OUTPUT" ./cmd/tofu
   fi
 )
 

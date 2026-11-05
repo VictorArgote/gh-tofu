@@ -37,7 +37,9 @@ done
 mkdir -p "$ROOT/dist"
 (
   cd "$SRC"
-  GOWORK=off go build -trimpath -o "$ROOT/dist/gh-tofu" ./cmd/tofu
+  GOWORK=off go build -trimpath \
+    -ldflags "-X github.com/opentofu/opentofu/version.dev=no" \
+    -o "$ROOT/dist/gh-tofu" ./cmd/tofu
 )
 
 # Opt-in: GH_TOFU_SYMLINK_TOFU=1 also exposes dist/tofu for scripts that expect `tofu`.

@@ -29,7 +29,7 @@ The extension uses the release asset for your platform, including Windows.
 ### Installer script (Linux and macOS, amd64 and arm64)
 
 ```sh
-curl -sSfL https://raw.githubusercontent.com/vmvarela/gh-tofu/main/scripts/install.sh | sh
+curl -sSfL https://raw.githubusercontent.com/vmvarela/gh-tofu/master/scripts/install.sh | sh
 ```
 
 - Installs only `gh-tofu` into `INSTALL_DIR` (default `/usr/local/bin`). Use a writable
@@ -38,7 +38,7 @@ curl -sSfL https://raw.githubusercontent.com/vmvarela/gh-tofu/main/scripts/insta
 - Verifies the download against `sha256sums.txt` before installing.
 
 ```sh
-curl -sSfL https://raw.githubusercontent.com/vmvarela/gh-tofu/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+curl -sSfL https://raw.githubusercontent.com/vmvarela/gh-tofu/master/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ### Standalone binary
