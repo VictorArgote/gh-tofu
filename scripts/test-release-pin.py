@@ -169,6 +169,24 @@ class ReleasePinTests(unittest.TestCase):
         self.assertIn('must run from refs/heads/master', result.stdout)
         self.assertEqual(out, '')
 
+    def test_commit_release_uses_full_source_sha(self):
+        result, out, _ = self.run_step(LATEST, release_type='commit')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'tag=v{LATEST}-fork.{SOURCE_SHA}\n', out)
+        self.assertIn('prerelease=true\n', out)
+        self.assertIn(f'source_sha={SOURCE_SHA}\n', out)
+
+    def test_commit_release_accepts_main_and_older_pinned_version(self):
+        result, out, _ = self.run_step('1.13.2', release_type='commit',
+                                      github_ref='refs/heads/main')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'tag=v1.13.2-fork.{SOURCE_SHA}\n', out)
+
+    def test_commit_release_rejects_republishing_same_source(self):
+        result, _, _ = self.run_step(LATEST, release_type='commit', tag_exists=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('already exists', result.stdout)
+
     def test_tag_ref_rejected_before_outputs(self):
         result, out, _ = self.run_step(LATEST, github_ref='refs/tags/v1.13.8')
         self.assertNotEqual(result.returncode, 0)
@@ -252,6 +270,17 @@ class ReleaseWorkflowTests(unittest.TestCase):
             checkout = step_block(job, '- uses: actions/checkout@v7')
             self.assertIn('ref: ${{ needs.verify.outputs.source_sha }}',
                           [line.strip() for line in checkout])
+
+    def test_automatic_releases_are_scoped_to_build_inputs(self):
+        workflow = WORKFLOW.read_text()
+        push = workflow.split('  push:\n', 1)[1].split('  workflow_dispatch:', 1)[0]
+        self.assertIn('branches: [master, main]', push)
+        for path in ('gh-tofu.env', 'patches/**', 'scripts/build.sh',
+                     'scripts/verify.sh', '.github/workflows/release.yml'):
+            self.assertIn(f'- {path}', push)
+        self.assertNotIn('README', push)
+        self.assertNotIn('docs/', push)
+        self.assertIn("github.event_name == 'push' && 'commit'", workflow)
 
     def test_release_permissions_are_least_privilege(self):
         self.assertEqual(permissions(self.release), {'contents': 'write'})

@@ -5,6 +5,16 @@ name: Release
 # GitHub CLI extension discovery depends on that suffix; the installer and action rely on it too.
 
 on:
+  push:
+    branches: [master, main]
+    paths:
+      - gh-tofu.env
+      - patches/**
+      - scripts/build.sh
+      - scripts/verify.sh
+      - scripts/e2e-oras.sh
+      - scripts/publish-release.sh
+      - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
       release_type:
@@ -13,6 +23,7 @@ on:
         default: prerelease
         type: choice
         options:
+          - commit
           - prerelease
           - stable
       prerelease_suffix:
@@ -54,12 +65,12 @@ jobs:
         id: version
         shell: bash
         env:
-          RELEASE_TYPE: ${{ inputs.release_type }}
+          RELEASE_TYPE: ${{ github.event_name == 'push' && 'commit' || inputs.release_type }}
           PRERELEASE_SUFFIX: ${{ inputs.prerelease_suffix }}
           ALLOW_OLDER_UPSTREAM_PIN: ${{ inputs.allow_older_upstream_pin }}
         run: |
-          if [[ "${GITHUB_REF:-}" != "refs/heads/master" ]]; then
-            echo "::error::The release workflow must run from refs/heads/master, got: ${GITHUB_REF:-<unset>}"
+          if [[ "${GITHUB_REF:-}" != "refs/heads/master" && "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+            echo "::error::The release workflow must run from refs/heads/master or refs/heads/main, got: ${GITHUB_REF:-<unset>}"
             exit 1
           fi
 
@@ -98,15 +109,15 @@ jobs:
               echo "::error::GH_TOFU_VERSION ($GH_TOFU_VERSION) is newer than OpenTofu's latest stable release ($LATEST_VERSION)."
               exit 1
             fi
-            if [[ "$ALLOW_OLDER_UPSTREAM_PIN" != true ]]; then
+            if [[ "$ALLOW_OLDER_UPSTREAM_PIN" != true && "$RELEASE_TYPE" != commit ]]; then
               echo "::error::gh-tofu can only release against OpenTofu's globally latest stable version: pinned=$GH_TOFU_VERSION, latest=$LATEST_VERSION. Set allow_older_upstream_pin to release an explicit older pin."
               exit 1
             fi
-            echo "::warning::Older upstream pin exception: releasing gh-tofu $GH_TOFU_VERSION while OpenTofu's latest stable is $LATEST_VERSION (allow_older_upstream_pin=true)."
+            echo "::warning::Older upstream pin exception: releasing gh-tofu $GH_TOFU_VERSION while OpenTofu's latest stable is $LATEST_VERSION (commit build or explicit opt-in)."
             {
               echo "### Older upstream pin exception"
               echo "- Releasing gh-tofu \`$GH_TOFU_VERSION\` against OpenTofu \`$OPENTOFU_REF\`."
-              echo "- OpenTofu's latest stable release is \`$LATEST_VERSION\`; \`allow_older_upstream_pin\` was explicitly set."
+              echo "- OpenTofu's latest stable release is \`$LATEST_VERSION\`; the pinned version is retained for this commit build or explicit opt-in."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -130,6 +141,12 @@ jobs:
           fi
 
           case "$RELEASE_TYPE" in
+            commit)
+              [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+              VERSION="$GH_TOFU_VERSION-fork.$GITHUB_SHA"
+              TAG="v$VERSION"
+              IS_PRERELEASE=true
+              ;;
             stable)
               VERSION="$GH_TOFU_VERSION"
               TAG="v$VERSION"
@@ -168,6 +185,14 @@ jobs:
           echo "gh-tofu release: $TAG"
           echo "OpenTofu base: $OPENTOFU_REF ($OPENTOFU_COMMIT)"
           echo "Source commit: $SOURCE_SHA"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            gh-tofu.env
+            patches/*
+            scripts/verify.sh
 
       - name: Verify patches and tests
         env:
@@ -208,10 +233,13 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.source_sha }}
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "stable"
-          cache: false
+          go-version: "1.27.3"
+          cache-dependency-path: |
+            gh-tofu.env
+            patches/*
+            scripts/build.sh
 
       - name: Build
         env:
