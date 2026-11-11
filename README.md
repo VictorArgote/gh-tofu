@@ -10,6 +10,28 @@ OCI artifacts in a registry such as GitHub Container Registry (GHCR).
 
 gh-tofu wraps one pinned OpenTofu release. Its version matches that OpenTofu release.
 
+## Fork builds
+
+This fork preserves ORAS state migration metadata, exposes the remote state
+manager's optional interfaces, and rejects a destination that appears before
+initial persistence. Regression tests cover absent state, exact initial
+lineage/serial, conflicting imports, snapshot metadata and persistence retries.
+
+Relevant pushes to `master` or `main` automatically run the release pipeline:
+patched-source tests, a disposable OCI registry lifecycle, five platform builds,
+attestations, and publication of a commit-specific prerelease
+`v<OpenTofu version>-fork.<full source SHA>`. Documentation-only pushes do not
+publish binaries. Manual releases remain available.
+
+Download the raw executable and `sha256sums.txt` from that exact release in
+`VictorArgote/gh-tofu`. Consumers should pin the release tag and executable
+SHA-256, never a moving `latest` URL. Release assets do not expire like temporary
+Actions artifacts; builds also upload Actions artifacts for inspection. The
+binary still reports the underlying OpenTofu version.
+
+The upstream installer/action below only accepts stable version tags. For the
+fork's commit-specific prereleases, download the explicit release asset instead.
+
 ## Forms
 
 - **GitHub CLI extension**: `gh tofu`.

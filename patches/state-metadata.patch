@@ -1,0 +1,60 @@
+diff --git a/internal/backend/remote-state/oras/backend.go b/internal/backend/remote-state/oras/backend.go
+--- a/internal/backend/remote-state/oras/backend.go
++++ b/internal/backend/remote-state/oras/backend.go
+@@ -267,7 +267,7 @@
+ 	client := &RemoteClient{client: b.client, workspace: workspace, retryCfg: b.retryCfg}
+ 	return &historyState{
+-		Full:       remote.NewState(client, b.encryption),
++		remoteState: remote.NewState(client, b.encryption),
+ 		client:     b.client,
+ 		workspace:  workspace,
+ 		encryption: b.encryption,
+ 	}, nil
+@@ -276,10 +276,16 @@
++// The alias avoids hiding the State() method while preserving optional interfaces.
++type remoteState = remote.State
++
+ type historyState struct {
+-	statemgr.Full
++	*remoteState
+ 	client     *orasstate.Client
+ 	workspace  string
+ 	encryption encryption.StateEncryption
+ }
+ 
+ var _ statemgr.History = (*historyState)(nil)
++var _ statemgr.Full = (*historyState)(nil)
++var _ statemgr.Migrator = (*historyState)(nil)
++var _ statemgr.PersistentMeta = (*historyState)(nil)
+ 
+ func (s *historyState) ListVersions(ctx context.Context) ([]statemgr.StateVersion, error) {
+diff --git a/internal/states/remote/state.go b/internal/states/remote/state.go
+--- a/internal/states/remote/state.go
++++ b/internal/states/remote/state.go
+@@ -95,6 +95,9 @@
+ func (s *State) StateForMigration() *statefile.File {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+ 
++	if s.state == nil {
++		return nil
++	}
+ 	return statefile.New(s.state.DeepCopy(), s.lineage, s.serial)
+ }
+@@ -214,10 +217,15 @@
+ 		// We might be writing a new state altogether, but before we do that
+ 		// we'll check to make sure there isn't already a snapshot present
+ 		// that we ought to be updating.
+-		err := s.refreshState(ctx)
++		// Check without replacing the state and metadata pending persistence.
++		existing := NewState(s.Client, s.encryption)
++		err := existing.RefreshState(ctx)
+ 		if err != nil {
+ 			return fmt.Errorf("failed checking for existing remote state: %w", err)
+ 		}
++		if existing.State() != nil {
++			return fmt.Errorf("remote state appeared before initial persistence; refresh and retry")
++		}
+ 		log.Printf("[DEBUG] states/remote: after refresh, state read serial is: %d; serial is: %d", s.readSerial, s.serial)
+ 		log.Printf("[DEBUG] states/remote: after refresh, state read lineage is: %s; lineage is: %s", s.readLineage, s.lineage)
+ 		if s.lineage == "" { // indicates that no state snapshot is present yet

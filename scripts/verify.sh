@@ -8,10 +8,12 @@ source "$ROOT/gh-tofu.env"
 sh -n "$ROOT/scripts/install.sh"
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'find "$WORK" -depth -delete' EXIT
 SRC="$WORK/opentofu"
 
-git clone --quiet --filter=blob:none https://github.com/opentofu/opentofu.git "$SRC"
+git init --quiet "$SRC"
+git -C "$SRC" remote add origin https://github.com/opentofu/opentofu.git
+git -C "$SRC" fetch --quiet --depth=1 origin "$OPENTOFU_COMMIT"
 git -C "$SRC" checkout --quiet "$OPENTOFU_COMMIT"
 
 PATCHES=(
@@ -19,12 +21,18 @@ PATCHES=(
   "$ROOT/patches/history.patch"
   "$ROOT/patches/init-assistant.patch"
   "$ROOT/patches/oras-purge.patch"
+  "$ROOT/patches/state-metadata.patch"
 )
 
 for patch in "${PATCHES[@]}"; do
   git -C "$SRC" apply --check "$patch"
   git -C "$SRC" apply "$patch"
 done
+
+cp "$ROOT/patches/state_metadata_test.go" "$SRC/internal/backend/remote-state/oras/"
+gofmt -w "$SRC/internal/backend/remote-state/oras/backend.go" \
+  "$SRC/internal/backend/remote-state/oras/state_metadata_test.go" \
+  "$SRC/internal/states/remote/state.go"
 
 # Smart Refresh was removed entirely; fail if any of its symbols reappear.
 if git -C "$SRC" grep -qiE 'refreshsmart|smart_refresh' -- internal cmd; then

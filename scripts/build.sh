@@ -10,6 +10,7 @@ PATCHES=(
   "$ROOT/patches/history.patch"
   "$ROOT/patches/init-assistant.patch"
   "$ROOT/patches/oras-purge.patch"
+  "$ROOT/patches/state-metadata.patch"
 )
 
 for patch in "${PATCHES[@]}"; do
@@ -20,10 +21,12 @@ for patch in "${PATCHES[@]}"; do
 done
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'find "$WORK" -depth -delete' EXIT
 SRC="$WORK/opentofu"
 
-git clone --quiet --filter=blob:none https://github.com/opentofu/opentofu.git "$SRC"
+git init --quiet "$SRC"
+git -C "$SRC" remote add origin https://github.com/opentofu/opentofu.git
+git -C "$SRC" fetch --quiet --depth=1 origin "$OPENTOFU_COMMIT"
 git -C "$SRC" checkout --quiet "$OPENTOFU_COMMIT"
 
 actual="$(git -C "$SRC" rev-parse HEAD)"
@@ -36,6 +39,8 @@ for patch in "${PATCHES[@]}"; do
   git -C "$SRC" apply --check "$patch"
   git -C "$SRC" apply "$patch"
 done
+
+gofmt -w "$SRC/internal/backend/remote-state/oras/backend.go" "$SRC/internal/states/remote/state.go"
 
 mkdir -p "$ROOT/dist"
 (
