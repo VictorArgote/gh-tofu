@@ -50,7 +50,7 @@ concurrency:
 jobs:
   verify:
     name: Verify release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -94,6 +94,7 @@ jobs:
           fi
 
           RELEASES_JSON="$(curl --fail --silent --show-error \
+            --retry 3 --retry-max-time 120 --connect-timeout 15 --max-time 60 \
             --header "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/opentofu/opentofu/releases?per_page=100")"
 
@@ -214,7 +215,7 @@ jobs:
   build:
     name: Build ${{ matrix.os }}-${{ matrix.arch }}
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -288,7 +289,7 @@ jobs:
       ${{ !cancelled()
       && needs.verify.result == 'success'
       && needs.build.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
