@@ -95,6 +95,10 @@ export GH_TOFU_E2E_LOCK_SLEEP="0"
 
 echo "Initializing writer through the ORAS backend"
 "$GH_TOFU_BIN" -chdir="$WRITER" init -input=false -no-color
+if [[ -n "$("$GH_TOFU_BIN" -chdir="$WRITER" state pull)" ]]; then
+  echo "ERROR: an absent destination exported a synthetic state." >&2
+  exit 1
+fi
 
 echo "Applying initial synthetic state"
 "$GH_TOFU_BIN" -chdir="$WRITER" apply \
@@ -313,12 +317,9 @@ if ! grep -q "terraform_data" "$TTL_DIR/errored.tfstate"; then
   exit 1
 fi
 TTL_STATE="$("$GH_TOFU_BIN" -chdir="$TTL_DIR" state pull)"
-TTL_STATE="$TTL_STATE" python3 - <<'PY'
-import json, os, sys
-state = json.loads(os.environ["TTL_STATE"])
-if state.get("resources"):
-    print("ERROR: expired-lease apply wrote state anyway: %r" % state["resources"], file=sys.stderr)
-    sys.exit(1)
-PY
+if [[ -n "$TTL_STATE" ]]; then
+  echo "ERROR: expired-lease apply persisted a state snapshot." >&2
+  exit 1
+fi
 
 echo "ORAS backend E2E lifecycle passed."
