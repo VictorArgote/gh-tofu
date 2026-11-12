@@ -282,6 +282,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn('docs/', push)
         self.assertIn("github.event_name == 'push' && 'commit'", workflow)
 
+    def test_release_metadata_requests_have_bounded_retries(self):
+        script = run_block()
+        for option in ('--retry 3', '--retry-max-time 120',
+                       '--connect-timeout 15', '--max-time 60'):
+            self.assertIn(option, script)
+
     def test_release_permissions_are_least_privilege(self):
         self.assertEqual(permissions(self.release), {'contents': 'write'})
         self.assertEqual(permissions(self.build), {
